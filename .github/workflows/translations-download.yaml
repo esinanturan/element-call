@@ -13,18 +13,18 @@ jobs:
 
     steps:
       - name: Checkout the code
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
-      - uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4
         with:
           cache: "yarn"
-          node-version: "lts/*"
+          node-version-file: ".node-version"
 
       - name: Install Deps
         run: "yarn install --frozen-lockfile"
 
       - name: Prune i18n
-        run: "rm -R public/locales"
+        run: "rm -R locales"
 
       - name: Download translation files
         uses: localazy/download@0a79880fb66150601e3b43606fab69c88123c087 # v1.1.0
@@ -32,14 +32,14 @@ jobs:
           groups: "-p includeSourceLang:true"
 
       - name: Fix the owner of the downloaded files
-        run: "sudo chown runner:docker -R public/locales"
+        run: "sudo chown runner:docker -R locales"
 
       - name: Prettier
         run: yarn prettier:format
 
       - name: Create Pull Request
         id: cpr
-        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6.1.0
+        uses: peter-evans/create-pull-request@67ccf781d68cd99b580ae25a5c18a1cc84ffff1f # v7.0.6
         with:
           token: ${{ secrets.ELEMENT_BOT_TOKEN }}
           branch: actions/localazy-download

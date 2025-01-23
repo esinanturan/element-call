@@ -1,24 +1,15 @@
 /*
-Copyright 2023 New Vector Ltd
+Copyright 2023, 2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only
+Please see LICENSE in the repository root for full details.
 */
 
 import {
-  AudioCaptureOptions,
+  type AudioCaptureOptions,
   ConnectionState,
-  LocalTrack,
-  Room,
+  type LocalTrack,
+  type Room,
   RoomEvent,
   Track,
 } from "livekit-client";
@@ -26,7 +17,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { logger } from "matrix-js-sdk/src/logger";
 import * as Sentry from "@sentry/react";
 
-import { SFUConfig, sfuConfigEquals } from "./openIDSFU";
+import { type SFUConfig, sfuConfigEquals } from "./openIDSFU";
 import { PosthogAnalytics } from "../analytics/PosthogAnalytics";
 
 declare global {
@@ -45,7 +36,7 @@ export enum ECAddonConnectionState {
   // We are switching from one focus to another (or between livekit room aliases on the same focus)
   ECSwitchingFocus = "ec_switching_focus",
   // The call has just been initialised and is waiting for credentials to arrive before attempting
-  // to connect. This distinguishes from the 'Disconected' state which is now just for when livekit
+  // to connect. This distinguishes from the 'Disconnected' state which is now just for when livekit
   // gives up on connectivity and we consider the call to have failed.
   ECWaiting = "ec_waiting",
 }
@@ -115,6 +106,7 @@ async function doConnect(
     await connectAndPublish(livekitRoom, sfuConfig, preCreatedAudioTrack, []);
   } catch (e) {
     preCreatedAudioTrack?.stop();
+    logger.warn("Stopped precreated audio tracks.", e);
   }
 }
 
@@ -159,9 +151,13 @@ async function connectAndPublish(
     `Publishing ${screenshareTracks.length} precreated screenshare tracks`,
   );
   for (const st of screenshareTracks) {
-    livekitRoom.localParticipant.publishTrack(st, {
-      source: Track.Source.ScreenShare,
-    });
+    livekitRoom.localParticipant
+      .publishTrack(st, {
+        source: Track.Source.ScreenShare,
+      })
+      .catch((e) => {
+        logger.error("Failed to publish screenshare track", e);
+      });
   }
 }
 
@@ -239,7 +235,9 @@ export function useECConnectionState(
         `SFU config changed! URL was ${currentSFUConfig.current?.url} now ${sfuConfig?.url}`,
       );
 
-      doFocusSwitch();
+      doFocusSwitch().catch((e) => {
+        logger.error("Failed to switch focus", e);
+      });
     } else if (
       !sfuConfigValid(currentSFUConfig.current) &&
       sfuConfigValid(sfuConfig)
@@ -256,7 +254,11 @@ export function useECConnectionState(
         sfuConfig!,
         initialAudioEnabled,
         initialAudioOptions,
-      ).finally(() => setIsInDoConnect(false));
+      )
+        .catch((e) => {
+          logger.error("Failed to connect to SFU", e);
+        })
+        .finally(() => setIsInDoConnect(false));
     }
 
     currentSFUConfig.current = Object.assign({}, sfuConfig);
