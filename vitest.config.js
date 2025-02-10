@@ -1,22 +1,27 @@
 import { defineConfig, mergeConfig } from "vitest/config";
-import viteConfig from "./vite.config";
+import viteConfig from "./vite.config.js";
 
 export default defineConfig((configEnv) =>
   mergeConfig(
     viteConfig(configEnv),
     defineConfig({
       test: {
-        globals: true,
         environment: "jsdom",
         css: {
           modules: {
             classNameStrategy: "non-scoped",
           },
         },
-        include: ["test/**/*-test.[jt]s?(x)"],
+        setupFiles: ["src/vitest.setup.ts"],
         coverage: {
-          reporter: ["text", "html"],
-          exclude: ["node_modules/"],
+          reporter: ["html", "json"],
+          include: ["src/"],
+          exclude: [
+            "src/**/*.{d,test}.{ts,tsx}",
+            "src/utils/test.ts",
+            "src/utils/test-viewmodel.ts",
+            "src/utils/test-fixtures.ts",
+          ],
         },
       },
     }),
