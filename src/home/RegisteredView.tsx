@@ -1,49 +1,42 @@
 /*
-Copyright 2022 New Vector Ltd
+Copyright 2022-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { useState, useCallback, FormEvent, FormEventHandler, FC } from "react";
-import { useHistory } from "react-router-dom";
-import { MatrixClient } from "matrix-js-sdk/src/client";
+import {
+  useState,
+  useCallback,
+  type FormEvent,
+  type FormEventHandler,
+  type FC,
+} from "react";
+import { type MatrixClient } from "matrix-js-sdk/src/client";
 import { useTranslation } from "react-i18next";
-import { Heading } from "@vector-im/compound-web";
+import { Heading, Text } from "@vector-im/compound-web";
 import { logger } from "matrix-js-sdk/src/logger";
+import { Button } from "@vector-im/compound-web";
+import { useNavigate } from "react-router-dom";
 
 import {
   createRoom,
   getRelativeRoomUrl,
   roomAliasLocalpartFromRoomName,
   sanitiseRoomNameInput,
-} from "../matrix-utils";
+} from "../utils/matrix";
 import { useGroupCallRooms } from "./useGroupCallRooms";
 import { Header, HeaderLogo, LeftNav, RightNav } from "../Header";
 import commonStyles from "./common.module.css";
 import styles from "./RegisteredView.module.css";
 import { FieldRow, InputField, ErrorMessage } from "../input/Input";
-import { Button } from "../button";
 import { CallList } from "./CallList";
 import { UserMenuContainer } from "../UserMenuContainer";
 import { JoinExistingCallModal } from "./JoinExistingCallModal";
-import { Caption } from "../typography/Typography";
 import { Form } from "../form/Form";
 import { AnalyticsNotice } from "../analytics/AnalyticsNotice";
 import { E2eeType } from "../e2ee/e2eeType";
-import {
-  useSetting,
-  optInAnalytics as optInAnalyticsSetting,
-} from "../settings/settings";
+import { useOptInAnalytics } from "../settings/settings";
 
 interface Props {
   client: MatrixClient;
@@ -52,8 +45,8 @@ interface Props {
 export const RegisteredView: FC<Props> = ({ client }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error>();
-  const [optInAnalytics] = useSetting(optInAnalyticsSetting);
-  const history = useHistory();
+  const [optInAnalytics] = useOptInAnalytics();
+  const navigate = useNavigate();
   const { t } = useTranslation();
   const [joinExistingCallModalOpen, setJoinExistingCallModalOpen] =
     useState(false);
@@ -84,7 +77,7 @@ export const RegisteredView: FC<Props> = ({ client }) => {
         if (!createRoomResult.password)
           throw new Error("Failed to create room with shared secret");
 
-        history.push(
+        await navigate(
           getRelativeRoomUrl(
             createRoomResult.roomId,
             { kind: E2eeType.SHARED_KEY, secret: createRoomResult.password },
@@ -106,15 +99,17 @@ export const RegisteredView: FC<Props> = ({ client }) => {
         }
       });
     },
-    [client, history, setJoinExistingCallModalOpen],
+    [client, navigate, setJoinExistingCallModalOpen],
   );
 
   const recentRooms = useGroupCallRooms(client);
 
   const [existingAlias, setExistingAlias] = useState<string>();
   const onJoinExistingRoom = useCallback(() => {
-    history.push(`/${existingAlias}`);
-  }, [history, existingAlias]);
+    navigate(`/${existingAlias}`)?.catch((error) => {
+      logger.error("Failed to navigate to existing alias", error);
+    });
+  }, [navigate, existingAlias]);
 
   return (
     <>
@@ -156,9 +151,9 @@ export const RegisteredView: FC<Props> = ({ client }) => {
               </Button>
             </FieldRow>
             {optInAnalytics === null && (
-              <Caption className={styles.notice}>
+              <Text size="sm" className={styles.notice}>
                 <AnalyticsNotice />
-              </Caption>
+              </Text>
             )}
             {error && (
               <FieldRow className={styles.fieldRow}>

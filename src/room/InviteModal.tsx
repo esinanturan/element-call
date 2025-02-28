@@ -1,22 +1,19 @@
 /*
-Copyright 2022 - 2023 New Vector Ltd
+Copyright 2022-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { FC, MouseEvent, useCallback, useMemo, useState } from "react";
+import {
+  type FC,
+  type MouseEvent,
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
-import { Room } from "matrix-js-sdk";
+import { type Room } from "matrix-js-sdk/src/matrix";
 import { Button, Text } from "@vector-im/compound-web";
 import {
   LinkIcon,
@@ -25,10 +22,11 @@ import {
 import useClipboard from "react-use-clipboard";
 
 import { Modal } from "../Modal";
-import { getAbsoluteRoomUrl } from "../matrix-utils";
+import { getAbsoluteRoomUrl } from "../utils/matrix";
 import styles from "./InviteModal.module.css";
 import { Toast } from "../Toast";
 import { useRoomEncryptionSystem } from "../e2ee/sharedKeyManagement";
+import { QrCode } from "../QrCode";
 
 interface Props {
   room: Room;
@@ -61,6 +59,7 @@ export const InviteModal: FC<Props> = ({ room, open, onDismiss }) => {
   return (
     <>
       <Modal title={t("invite_modal.title")} open={open} onDismiss={onDismiss}>
+        <QrCode className={styles.qrCode} data={url} />
         <Text className={styles.url} size="sm" weight="semibold">
           {url}
         </Text>

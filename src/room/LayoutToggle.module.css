@@ -1,17 +1,8 @@
 /*
-Copyright 2023 New Vector Ltd
+Copyright 2023, 2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
 .toggle {
@@ -19,66 +10,70 @@ limitations under the License.
   border: 1px solid var(--cpd-color-border-interactive-secondary);
   border-radius: var(--cpd-radius-pill-effect);
   background: var(--cpd-color-bg-canvas-default);
-  box-shadow: 0px 0px 40px 0px rgba(0, 0, 0, 0.5);
   display: flex;
+  position: relative;
 }
 
 .toggle input {
   appearance: none;
-  /*
-   * Safari puts a margin on these, which is not removed via appearance: none
-   * mobile safari also has them take up space in the DOM, so set width 0
-   */
+  /* Safari puts a margin on these, which is not removed via appearance: none */
   margin: 0;
-  width: 0;
-  outline: none !important;
-}
-
-.toggle label {
-  display: block;
-  padding: calc(2.5 * var(--cpd-space-1x));
+  block-size: var(--cpd-space-11x);
+  inline-size: var(--cpd-space-11x);
   cursor: pointer;
   border-radius: var(--cpd-radius-pill-effect);
-  color: var(--cpd-color-icon-primary);
   background: var(--cpd-color-bg-action-secondary-rest);
   box-shadow: var(--small-drop-shadow);
+  transition: background-color 0.1s;
+}
+
+.toggle svg {
+  display: block;
+  position: absolute;
+  padding: calc(2.5 * var(--cpd-space-1x));
+  pointer-events: none;
+  color: var(--cpd-color-icon-primary);
+  transition: color 0.1s;
+}
+
+.toggle svg:nth-child(2) {
+  inset-inline-start: 2px;
+}
+
+.toggle svg:nth-child(4) {
+  inset-inline-end: 2px;
 }
 
 @media (hover: hover) {
-  .toggle label:hover {
+  .toggle input:hover {
     background: var(--cpd-color-bg-action-secondary-hovered);
     box-shadow: none;
   }
 }
 
-.toggle label:active {
-  background: var(--cpd-color-bg-action-secondary-hovered);
+.toggle input:active {
+  background: var(--cpd-color-bg-action-secondary-pressed);
   box-shadow: none;
 }
 
-.toggle input:checked + label {
-  color: var(--cpd-color-icon-on-solid-primary);
+.toggle input:checked {
   background: var(--cpd-color-bg-action-primary-rest);
 }
 
+.toggle input:checked + svg {
+  color: var(--cpd-color-icon-on-solid-primary);
+}
+
 @media (hover: hover) {
-  .toggle input:checked + label:hover {
+  .toggle input:checked:hover {
     background: var(--cpd-color-bg-action-primary-hovered);
   }
 }
 
-.toggle input:checked + label:active {
-  background: var(--cpd-color-bg-action-primary-hovered);
+.toggle input:checked:active {
+  background: var(--cpd-color-bg-action-primary-pressed);
 }
 
-.toggle label > svg {
-  display: block;
-}
-
-.toggle label:last-child {
-  margin-inline-start: 5px;
-}
-
-.toggle input:focus-visible + label {
-  outline: auto;
+.toggle input:first-child {
+  margin-inline-end: 5px;
 }

@@ -1,35 +1,26 @@
 /*
-Copyright 2023-2024 New Vector Ltd
+Copyright 2023, 2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
 import {
-  SpringRef,
-  TransitionFn,
-  animated,
+  type SpringRef,
+  type TransitionFn,
+  type animated,
   useTransition,
 } from "@react-spring/web";
-import { EventTypes, Handler, useScroll } from "@use-gesture/react";
+import { type EventTypes, type Handler, useScroll } from "@use-gesture/react";
 import {
-  CSSProperties,
-  ComponentProps,
-  ComponentType,
-  Dispatch,
-  FC,
-  LegacyRef,
-  ReactNode,
-  SetStateAction,
+  type CSSProperties,
+  type ComponentProps,
+  type ComponentType,
+  type Dispatch,
+  type FC,
+  type LegacyRef,
+  type ReactNode,
+  type SetStateAction,
   createContext,
   forwardRef,
   memo,
@@ -41,6 +32,9 @@ import {
 } from "react";
 import useMeasure from "react-use-measure";
 import classNames from "classnames";
+import { logger } from "matrix-js-sdk/src/logger";
+import { useObservableEagerState } from "observable-hooks";
+import { fromEvent, map, startWith } from "rxjs";
 
 import styles from "./Grid.module.css";
 import { useMergedRefs } from "../useMergedRefs";
@@ -118,26 +112,54 @@ function offset(element: HTMLElement, relativeTo: Element): Offset {
   }
 }
 
+export type VisibleTilesCallback = (visibleTiles: number) => void;
+
 interface LayoutContext {
   setGeneration: Dispatch<SetStateAction<number | null>>;
+  setVisibleTilesCallback: Dispatch<
+    SetStateAction<VisibleTilesCallback | null>
+  >;
 }
 
 const LayoutContext = createContext<LayoutContext | null>(null);
+
+function useLayoutContext(): LayoutContext {
+  const context = useContext(LayoutContext);
+  if (context === null)
+    throw new Error("useUpdateLayout called outside a Grid layout context");
+  return context;
+}
 
 /**
  * Enables Grid to react to layout changes. You must call this in your Layout
  * component or else Grid will not be reactive.
  */
 export function useUpdateLayout(): void {
-  const context = useContext(LayoutContext);
-  if (context === null)
-    throw new Error("useUpdateLayout called outside a Grid layout context");
-
+  const { setGeneration } = useLayoutContext();
   // On every render, tell Grid that the layout may have changed
-  useEffect(() =>
-    context.setGeneration((prev) => (prev === null ? 0 : prev + 1)),
+  useEffect(() => setGeneration((prev) => (prev === null ? 0 : prev + 1)));
+}
+
+/**
+ * Asks Grid to call a callback whenever the number of visible tiles may have
+ * changed.
+ */
+export function useVisibleTiles(callback: VisibleTilesCallback): void {
+  const { setVisibleTilesCallback } = useLayoutContext();
+  useEffect(
+    () => setVisibleTilesCallback(() => callback),
+    [callback, setVisibleTilesCallback],
+  );
+  useEffect(
+    () => (): void => setVisibleTilesCallback(null),
+    [setVisibleTilesCallback],
   );
 }
+
+const windowHeightObservable$ = fromEvent(window, "resize").pipe(
+  startWith(null),
+  map(() => window.innerHeight),
+);
 
 export interface LayoutProps<LayoutModel, TileModel, R extends HTMLElement> {
   ref: LegacyRef<R>;
@@ -240,8 +262,11 @@ export function Grid<
   const [gridRoot, gridRef2] = useState<HTMLElement | null>(null);
   const gridRef = useMergedRefs<HTMLElement>(gridRef1, gridRef2);
 
+  const windowHeight = useObservableEagerState(windowHeightObservable$);
   const [layoutRoot, setLayoutRoot] = useState<HTMLElement | null>(null);
   const [generation, setGeneration] = useState<number | null>(null);
+  const [visibleTilesCallback, setVisibleTilesCallback] =
+    useState<VisibleTilesCallback | null>(null);
   const tiles = useInitial(() => new Map<string, Tile<TileModel>>());
   const prefersReducedMotion = usePrefersReducedMotion();
 
@@ -249,6 +274,7 @@ export function Grid<
     () =>
       function Slot({ id, model, onDrag, style, className, ...props }) {
         const ref = useRef<HTMLDivElement | null>(null);
+
         useEffect(() => {
           tiles.set(id, { id, model, onDrag });
           return (): void => void tiles.delete(id);
@@ -282,7 +308,10 @@ export function Grid<
     [],
   );
 
-  const context: LayoutContext = useMemo(() => ({ setGeneration }), []);
+  const context: LayoutContext = useMemo(
+    () => ({ setGeneration, setVisibleTilesCallback }),
+    [setVisibleTilesCallback],
+  );
 
   // Combine the tile definitions and slots together to create placed tiles
   const placedTiles = useMemo(() => {
@@ -309,6 +338,19 @@ export function Grid<
     // generation, but eslint can't statically verify this
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gridRoot, layoutRoot, tiles, gridBounds, generation]);
+
+  // The height of the portion of the grid visible at any given time
+  const visibleHeight = useMemo(
+    () => Math.min(gridBounds.bottom, windowHeight) - gridBounds.top,
+    [gridBounds, windowHeight],
+  );
+
+  useEffect(() => {
+    visibleTilesCallback?.(
+      placedTiles.filter((tile) => tile.y + tile.height <= visibleHeight)
+        .length,
+    );
+  }, [placedTiles, visibleTilesCallback, visibleHeight]);
 
   // Drag state is stored in a ref rather than component state, because we use
   // react-spring's imperative API during gestures to improve responsiveness
@@ -362,7 +404,7 @@ export function Grid<
   // Because we're using react-spring in imperative mode, we're responsible for
   // firing animations manually whenever the tiles array updates
   useEffect(() => {
-    springRef.start();
+    springRef.start().forEach((p) => void p.catch(logger.error));
   }, [placedTiles, springRef]);
 
   const animateDraggedTile = (
@@ -399,7 +441,8 @@ export function Grid<
                 ((key): boolean =>
                   key === "zIndex" || key === "x" || key === "y"),
             },
-      );
+      )
+      .catch(logger.error);
 
     if (endOfGesture)
       callback({

@@ -7,14 +7,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - name: Yarn cache
-        uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4
         with:
           cache: "yarn"
-          node-version: "lts/*"
+          node-version-file: ".node-version"
       - name: Install dependencies
-        run: "yarn install"
+        run: "yarn install --frozen-lockfile"
       - name: Prettier
         run: "yarn run prettier:check"
       - name: i18n
@@ -23,3 +23,5 @@ jobs:
         run: "yarn run lint:eslint"
       - name: Type check
         run: "yarn run lint:types"
+      - name: Dead code analysis
+        run: "yarn run lint:knip"

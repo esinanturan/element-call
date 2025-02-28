@@ -1,31 +1,24 @@
 /*
-Copyright 2023 New Vector Ltd
+Copyright 2023, 2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { MatrixRTCSession } from "matrix-js-sdk/src/matrixrtc/MatrixRTCSession";
+import { type MatrixRTCSession } from "matrix-js-sdk/src/matrixrtc/MatrixRTCSession";
 import { logger } from "matrix-js-sdk/src/logger";
 import {
-  LivekitFocus,
-  LivekitFocusActive,
   isLivekitFocus,
   isLivekitFocusConfig,
+  type LivekitFocus,
+  type LivekitFocusActive,
 } from "matrix-js-sdk/src/matrixrtc/LivekitFocus";
+import { AutoDiscovery } from "matrix-js-sdk/src/autodiscovery";
 
 import { PosthogAnalytics } from "./analytics/PosthogAnalytics";
 import { Config } from "./config/Config";
-import { ElementWidgetActions, WidgetHelpers, widget } from "./widget";
+import { ElementWidgetActions, widget, type WidgetHelpers } from "./widget";
+import { MatrixRTCFocusMissingError } from "./utils/errors.ts";
 
 const FOCI_WK_KEY = "org.matrix.msc4143.rtc_foci";
 
@@ -52,19 +45,28 @@ async function makePreferredLivekitFoci(
     preferredFoci.push(focusInUse);
   }
 
-  // Prioritize the client well known over the configured sfu.
-  const wellKnownFoci =
-    rtcSession.room.client.getClientWellKnown()?.[FOCI_WK_KEY];
-  if (Array.isArray(wellKnownFoci)) {
-    preferredFoci.push(
-      ...wellKnownFoci
-        .filter((f) => !!f)
-        .filter(isLivekitFocusConfig)
-        .map((wellKnownFocus) => {
-          logger.log("Adding livekit focus from well known: ", wellKnownFocus);
-          return { ...wellKnownFocus, livekit_alias: livekitAlias };
-        }),
-    );
+  // Prioritize the .well-known/matrix/client, if available, over the configured SFU
+  const domain = rtcSession.room.client.getDomain();
+  if (domain) {
+    // we use AutoDiscovery instead of relying on the MatrixClient having already
+    // been fully configured and started
+    const wellKnownFoci = (await AutoDiscovery.getRawClientConfig(domain))?.[
+      FOCI_WK_KEY
+    ];
+    if (Array.isArray(wellKnownFoci)) {
+      preferredFoci.push(
+        ...wellKnownFoci
+          .filter((f) => !!f)
+          .filter(isLivekitFocusConfig)
+          .map((wellKnownFocus) => {
+            logger.log(
+              "Adding livekit focus from well known: ",
+              wellKnownFocus,
+            );
+            return { ...wellKnownFocus, livekit_alias: livekitAlias };
+          }),
+      );
+    }
   }
 
   const urlFromConf = Config.get().livekit?.livekit_service_url;
@@ -79,12 +81,8 @@ async function makePreferredLivekitFoci(
   }
 
   if (preferredFoci.length === 0)
-    throw new Error(
-      `No livekit_service_url is configured so we could not create a focus.
-    Currently we skip computing a focus based on other users in the room.`,
-    );
-
-  return preferredFoci;
+    throw new MatrixRTCFocusMissingError(domain ?? "");
+  return Promise.resolve(preferredFoci);
 
   // TODO: we want to do something like this:
   //
@@ -108,8 +106,9 @@ export async function enterRTCSession(
 
   // right now we assume everything is a room-scoped call
   const livekitAlias = rtcSession.room.roomId;
+  const { features, matrix_rtc_session: matrixRtcSessionConfig } = Config.get();
   const useDeviceSessionMemberEvents =
-    Config.get().features?.feature_use_device_session_member_events;
+    features?.feature_use_device_session_member_events;
   rtcSession.joinRoomSession(
     await makePreferredLivekitFoci(rtcSession, livekitAlias),
     makeActiveFocus(),
@@ -118,30 +117,58 @@ export async function enterRTCSession(
       ...(useDeviceSessionMemberEvents !== undefined && {
         useLegacyMemberEvents: !useDeviceSessionMemberEvents,
       }),
+      membershipServerSideExpiryTimeout:
+        matrixRtcSessionConfig?.membership_server_side_expiry_timeout,
+      membershipKeepAlivePeriod:
+        matrixRtcSessionConfig?.membership_keep_alive_period,
+      makeKeyDelay: matrixRtcSessionConfig?.key_rotation_on_leave_delay,
     },
   );
 }
 
 const widgetPostHangupProcedure = async (
   widget: WidgetHelpers,
+  cause: "user" | "error",
+  promiseBeforeHangup?: Promise<unknown>,
 ): Promise<void> => {
-  // we need to wait until the callEnded event is tracked on posthog.
-  // Otherwise the iFrame gets killed before the callEnded event got tracked.
-  await new Promise((resolve) => window.setTimeout(resolve, 10)); // 10ms
-  widget.api.setAlwaysOnScreen(false);
-  PosthogAnalytics.instance.logout();
+  try {
+    await widget.api.setAlwaysOnScreen(false);
+  } catch (e) {
+    logger.error("Failed to set call widget `alwaysOnScreen` to false", e);
+  }
 
+  // Wait for any last bits before hanging up.
+  await promiseBeforeHangup;
   // We send the hangup event after the memberships have been updated
   // calling leaveRTCSession.
   // We need to wait because this makes the client hosting this widget killing the IFrame.
-  widget.api.transport.send(ElementWidgetActions.HangupCall, {});
+  try {
+    await widget.api.transport.send(ElementWidgetActions.HangupCall, {});
+  } catch (e) {
+    logger.error("Failed to send hangup action", e);
+  }
+  // On a normal user hangup we can shut down and close the widget. But if an
+  // error occurs we should keep the widget open until the user reads it.
+  if (cause === "user") {
+    try {
+      await widget.api.transport.send(ElementWidgetActions.Close, {});
+    } catch (e) {
+      logger.error("Failed to send close action", e);
+    }
+    widget.api.transport.stop();
+    PosthogAnalytics.instance.logout();
+  }
 };
 
 export async function leaveRTCSession(
   rtcSession: MatrixRTCSession,
+  cause: "user" | "error",
+  promiseBeforeHangup?: Promise<unknown>,
 ): Promise<void> {
   await rtcSession.leaveRoomSession();
   if (widget) {
-    await widgetPostHangupProcedure(widget);
+    await widgetPostHangupProcedure(widget, cause, promiseBeforeHangup);
+  } else {
+    await promiseBeforeHangup;
   }
 }

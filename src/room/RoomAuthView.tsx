@@ -1,33 +1,24 @@
 /*
-Copyright 2022 New Vector Ltd
+Copyright 2022-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { FC, useCallback, useState } from "react";
+import { type FC, useCallback, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
 import { logger } from "matrix-js-sdk/src/logger";
+import { Button, Heading, Text } from "@vector-im/compound-web";
 
 import styles from "./RoomAuthView.module.css";
-import { Button } from "../button";
-import { Body, Caption, Link, Headline } from "../typography/Typography";
 import { Header, HeaderLogo, LeftNav, RightNav } from "../Header";
 import { FieldRow, InputField, ErrorMessage } from "../input/Input";
 import { Form } from "../form/Form";
 import { UserMenuContainer } from "../UserMenuContainer";
 import { useRegisterPasswordlessUser } from "../auth/useRegisterPasswordlessUser";
 import { Config } from "../config/Config";
+import { ExternalLink, Link } from "../button/Link";
 
 export const RoomAuthView: FC = () => {
   const [loading, setLoading] = useState(false);
@@ -72,9 +63,9 @@ export const RoomAuthView: FC = () => {
       </Header>
       <div className={styles.container}>
         <main className={styles.main}>
-          <Headline className={styles.headline}>
-            {t("lobby.join_button")}
-          </Headline>
+          <Heading size="xl" weight="semibold" className={styles.headline}>
+            {t("lobby.join_as_guest")}
+          </Heading>
           <Form className={styles.form} onSubmit={onSubmit}>
             <FieldRow>
               <InputField
@@ -88,14 +79,14 @@ export const RoomAuthView: FC = () => {
                 autoComplete="off"
               />
             </FieldRow>
-            <Caption>
+            <Text size="sm">
               <Trans i18nKey="room_auth_view_eula_caption">
                 By clicking "Join call now", you agree to our{" "}
-                <Link href={Config.get().eula}>
+                <ExternalLink href={Config.get().eula}>
                   End User Licensing Agreement (EULA)
-                </Link>
+                </ExternalLink>
               </Trans>
-            </Caption>
+            </Text>
             {error && (
               <FieldRow>
                 <ErrorMessage error={error} />
@@ -107,22 +98,21 @@ export const RoomAuthView: FC = () => {
               disabled={loading}
               data-testid="joincall_joincall"
             >
-              {loading ? t("common.loading") : t("room_auth_view_join_button")}
+              {loading
+                ? t("common.loading")
+                : t("room_auth_view_continue_button")}
             </Button>
             <div id={recaptchaId} />
           </Form>
         </main>
-        <Body className={styles.footer}>
+        <Text className={styles.footer}>
           <Trans i18nKey="unauthenticated_view_body">
             Not registered yet?{" "}
-            <Link
-              color="primary"
-              to={{ pathname: "/login", state: { from: location } }}
-            >
+            <Link to="/register" state={{ from: location }}>
               Create an account
             </Link>
           </Trans>
-        </Body>
+        </Text>
       </div>
     </>
   );

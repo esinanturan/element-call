@@ -1,17 +1,8 @@
 /*
-Copyright 2021-2022 New Vector Ltd
+Copyright 2021-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
 // We need to import this somewhere, once, so that the correct 'request'
@@ -22,21 +13,25 @@ import "matrix-js-sdk/src/browser-index";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { createBrowserHistory } from "history";
 import "./index.css";
 import { logger } from "matrix-js-sdk/src/logger";
 import {
   setLogExtension as setLKLogExtension,
-  setLogLevel,
+  setLogLevel as setLKLogLevel,
 } from "livekit-client";
 
 import { App } from "./App";
 import { init as initRageshake } from "./settings/rageshake";
 import { Initializer } from "./initializer";
 
-initRageshake();
-setLogLevel("debug");
-setLKLogExtension(global.mx_rage_logger.log);
+initRageshake().catch((e) => {
+  logger.error("Failed to initialize rageshake", e);
+});
+setLKLogLevel("debug");
+setLKLogExtension((level, msg, context) => {
+  // we pass a synthetic logger name of "livekit" to the rageshake to make it easier to read
+  global.mx_rage_logger.log(level, "livekit", msg, context);
+});
 
 logger.info(`Element Call ${import.meta.env.VITE_APP_VERSION || "dev"}`);
 
@@ -59,12 +54,15 @@ if (fatalError !== null) {
   throw fatalError; // Stop the app early
 }
 
-Initializer.initBeforeReact();
-
-const history = createBrowserHistory();
-
-root.render(
-  <StrictMode>
-    <App history={history} />
-  </StrictMode>,
-);
+Initializer.initBeforeReact()
+  .then(() => {
+    root.render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+  })
+  .catch((e) => {
+    logger.error("Failed to initialize app", e);
+    root.render(e.message);
+  });

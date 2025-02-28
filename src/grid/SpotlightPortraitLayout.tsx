@@ -1,32 +1,18 @@
 /*
-Copyright 2024 New Vector Ltd
+Copyright 2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { CSSProperties, forwardRef, useMemo } from "react";
+import { type CSSProperties, forwardRef } from "react";
 import { useObservableEagerState } from "observable-hooks";
 import classNames from "classnames";
 
-import {
-  CallLayout,
-  GridTileModel,
-  TileModel,
-  arrangeTiles,
-} from "./CallLayout";
-import { SpotlightPortraitLayout as SpotlightPortraitLayoutModel } from "../state/CallViewModel";
+import { type CallLayout, arrangeTiles } from "./CallLayout";
+import { type SpotlightPortraitLayout as SpotlightPortraitLayoutModel } from "../state/CallViewModel";
 import styles from "./SpotlightPortraitLayout.module.css";
-import { useUpdateLayout } from "./Grid";
+import { useUpdateLayout, useVisibleTiles } from "./Grid";
 
 interface GridCSSProperties extends CSSProperties {
   "--grid-gap": string;
@@ -41,7 +27,7 @@ interface GridCSSProperties extends CSSProperties {
  */
 export const makeSpotlightPortraitLayout: CallLayout<
   SpotlightPortraitLayoutModel
-> = ({ minBounds }) => ({
+> = ({ minBounds$ }) => ({
   scrollingOnTop: false,
 
   fixed: forwardRef(function SpotlightPortraitLayoutFixed(
@@ -49,19 +35,15 @@ export const makeSpotlightPortraitLayout: CallLayout<
     ref,
   ) {
     useUpdateLayout();
-    const tileModel: TileModel = useMemo(
-      () => ({
-        type: "spotlight",
-        vms: model.spotlight,
-        maximised: true,
-      }),
-      [model.spotlight],
-    );
 
     return (
       <div ref={ref} className={styles.layer}>
         <div className={styles.spotlight}>
-          <Slot className={styles.slot} id="spotlight" model={tileModel} />
+          <Slot
+            className={styles.slot}
+            id="spotlight"
+            model={model.spotlight}
+          />
         </div>
       </div>
     );
@@ -72,7 +54,8 @@ export const makeSpotlightPortraitLayout: CallLayout<
     ref,
   ) {
     useUpdateLayout();
-    const { width } = useObservableEagerState(minBounds);
+    useVisibleTiles(model.setVisibleTiles);
+    const { width } = useObservableEagerState(minBounds$);
     const { gap, tileWidth, tileHeight } = arrangeTiles(
       width,
       // TODO: We pretend that the minimum height is the width, because the
@@ -80,10 +63,8 @@ export const makeSpotlightPortraitLayout: CallLayout<
       width,
       model.grid.length,
     );
-    const tileModels: GridTileModel[] = useMemo(
-      () => model.grid.map((vm) => ({ type: "grid", vm })),
-      [model.grid],
-    );
+    const withIndicators =
+      useObservableEagerState(model.spotlight.media$).length > 1;
 
     return (
       <div
@@ -99,17 +80,12 @@ export const makeSpotlightPortraitLayout: CallLayout<
       >
         <div
           className={classNames(styles.spotlight, {
-            [styles.withIndicators]: model.spotlight.length > 1,
+            [styles.withIndicators]: withIndicators,
           })}
         />
         <div className={styles.grid}>
-          {tileModels.map((m) => (
-            <Slot
-              key={m.vm.id}
-              className={styles.slot}
-              id={m.vm.id}
-              model={m}
-            />
+          {model.grid.map((m) => (
+            <Slot key={m.id} className={styles.slot} id={m.id} model={m} />
           ))}
         </div>
       </div>

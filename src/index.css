@@ -1,28 +1,23 @@
 /*
-Copyright 2021-2022 New Vector Ltd
+Copyright 2021-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-/* Inter unexpectedly contains various codepoints which collide with emoji, even
-   when variation-16 is applied to request the emoji variant.  From eyeballing
-   the emoji picker, these are: 20e3, 23cf, 24c2, 25a0-25c1, 2665, 2764, 2b06, 2b1c.
-   Therefore we define a unicode-range to load which excludes the glyphs
-   (to avoid having to maintain a fork of Inter). */
+@layer normalize, compound-legacy, compound;
 
-@import "normalize.css/normalize.css";
-@import "@vector-im/compound-design-tokens/assets/web/css/compound-design-tokens.css";
-@import "@vector-im/compound-web/dist/style.css";
+@import url("@fontsource/inter/400.css");
+@import url("@fontsource/inter/500.css");
+@import url("@fontsource/inter/600.css");
+@import url("@fontsource/inter/700.css");
+@import url("@fontsource/inconsolata/400.css");
+@import url("@fontsource/inconsolata/700.css");
+
+@import url("normalize.css/normalize.css") layer(normalize);
+@import url("@vector-im/compound-design-tokens/assets/web/css/compound-design-tokens.css")
+layer(compound);
+@import url("@vector-im/compound-web/dist/style.css") layer(compound.components);
 
 :root {
   --font-scale: 1;
@@ -52,98 +47,15 @@ limitations under the License.
   --background-gradient: url("graphics/backgroundGradient.svg");
 }
 
+:root,
+[class*="cpd-theme-"] {
+  --video-tile-background: var(--cpd-color-bg-subtle-secondary);
+}
+
 .cpd-theme-dark {
   --cpd-color-border-accent: var(--cpd-color-green-1100);
   --stopgap-color-on-solid-accent: var(--cpd-color-text-primary);
   --stopgap-background-85: rgba(16, 19, 23, 0.85);
-}
-
-@font-face {
-  font-family: "Inter";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  unicode-range: var(--inter-unicode-range);
-  src:
-    url("/fonts/Inter/Inter-Regular.woff2") format("woff2"),
-    url("/fonts/Inter/Inter-Regular.woff") format("woff");
-}
-
-@font-face {
-  font-family: "Inter";
-  font-style: italic;
-  font-weight: 400;
-  font-display: swap;
-  unicode-range: var(--inter-unicode-range);
-  src:
-    url("/fonts/Inter/Inter-Italic.woff2") format("woff2"),
-    url("/fonts/Inter/Inter-Italic.woff") format("woff");
-}
-
-@font-face {
-  font-family: "Inter";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  unicode-range: var(--inter-unicode-range);
-  src:
-    url("/fonts/Inter/Inter-Medium.woff2") format("woff2"),
-    url("/fonts/Inter/Inter-Medium.woff") format("woff");
-}
-
-@font-face {
-  font-family: "Inter";
-  font-style: italic;
-  font-weight: 500;
-  font-display: swap;
-  unicode-range: var(--inter-unicode-range);
-  src:
-    url("/fonts/Inter/Inter-MediumItalic.woff2") format("woff2"),
-    url("/fonts/Inter/Inter-MediumItalic.woff") format("woff");
-}
-
-@font-face {
-  font-family: "Inter";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  unicode-range: var(--inter-unicode-range);
-  src:
-    url("/fonts/Inter/Inter-SemiBold.woff2") format("woff2"),
-    url("/fonts/Inter/Inter-SemiBold.woff") format("woff");
-}
-
-@font-face {
-  font-family: "Inter";
-  font-style: italic;
-  font-weight: 600;
-  font-display: swap;
-  unicode-range: var(--inter-unicode-range);
-  src:
-    url("/fonts/Inter/Inter-SemiBoldItalic.woff2") format("woff2"),
-    url("/fonts/Inter/Inter-SemiBoldItalic.woff") format("woff");
-}
-
-@font-face {
-  font-family: "Inter";
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  unicode-range: var(--inter-unicode-range);
-  src:
-    url("/fonts/Inter/Inter-Bold.woff2") format("woff2"),
-    url("/fonts/Inter/Inter-Bold.woff") format("woff");
-}
-
-@font-face {
-  font-family: "Inter";
-  font-style: italic;
-  font-weight: 700;
-  font-display: swap;
-  unicode-range: var(--inter-unicode-range);
-  src:
-    url("/fonts/Inter/Inter-BoldItalic.woff2") format("woff2"),
-    url("/fonts/Inter/Inter-BoldItalic.woff") format("woff");
 }
 
 body {
@@ -191,91 +103,79 @@ body[data-platform="ios"] {
   --cpd-font-family-sans: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
 }
 
-body[data-platform="desktop"] {
-  --cpd-font-family-sans: "Inter", sans-serif;
-}
+@layer compound-legacy {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p,
+  a {
+    margin-top: 0;
+  }
 
-h1,
-h2,
-h3,
-h4,
-h5,
-h6,
-p,
-a {
-  margin-top: 0;
-}
+  /* Headline Semi Bold */
+  h1 {
+    font-weight: 600;
+    font-size: var(--font-size-headline);
+  }
 
-/* Headline Semi Bold */
-h1 {
-  font-weight: 600;
-  font-size: var(--font-size-headline);
-}
+  /* Title */
+  h2 {
+    font-weight: 600;
+    font-size: var(--font-size-title);
+  }
 
-/* Title */
-h2 {
-  font-weight: 600;
-  font-size: var(--font-size-title);
-}
+  /* Subtitle */
+  h3 {
+    font-weight: 600;
+    font-size: var(--font-size-subtitle);
+  }
 
-/* Subtitle */
-h3 {
-  font-weight: 600;
-  font-size: var(--font-size-subtitle);
-}
+  /* Body Semi Bold */
+  h4 {
+    font-weight: 600;
+    font-size: var(--font-size-body);
+  }
 
-/* Body Semi Bold */
-h4 {
-  font-weight: 600;
-  font-size: var(--font-size-body);
-}
+  h1,
+  h2,
+  h3 {
+    line-height: 1.2;
+  }
 
-h1,
-h2,
-h3 {
-  line-height: 1.2;
-}
+  /* Body */
+  p {
+    font-size: var(--font-size-body);
+    line-height: var(--font-size-title);
+  }
 
-/* Body */
-p {
-  font-size: var(--font-size-body);
-  line-height: var(--font-size-title);
-}
+  hr {
+    width: calc(100% - 24px);
+    border: none;
+    border-top: 1px solid var(--cpd-color-border-interactive-secondary);
+    color: var(--cpd-color-border-interactive-secondary);
+    overflow: visible;
+    text-align: center;
+    height: 5px;
+    font-weight: 600;
+    font-size: var(--font-size-body);
+    line-height: 24px;
+    margin: 0 12px;
+  }
 
-a {
-  color: var(--cpd-color-text-action-accent);
-  text-decoration: none;
-}
+  summary {
+    font-size: var(--font-size-body);
+  }
 
-a:hover,
-a:active {
-  opacity: 0.8;
-}
+  details > :not(summary) {
+    margin-left: var(--font-size-body);
+  }
 
-hr {
-  width: calc(100% - 24px);
-  border: none;
-  border-top: 1px solid var(--cpd-color-border-interactive-secondary);
-  color: var(--cpd-color-border-interactive-secondary);
-  overflow: visible;
-  text-align: center;
-  height: 5px;
-  font-weight: 600;
-  font-size: var(--font-size-body);
-  line-height: 24px;
-  margin: 0 12px;
-}
-
-summary {
-  font-size: var(--font-size-body);
-}
-
-details > :not(summary) {
-  margin-left: var(--font-size-body);
-}
-
-details[open] > summary {
-  margin-bottom: var(--font-size-body);
+  details[open] > summary {
+    margin-bottom: var(--font-size-body);
+  }
 }
 
 #root > [data-overlay-container] {

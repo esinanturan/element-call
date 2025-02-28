@@ -1,42 +1,32 @@
 /*
-Copyright 2022 New Vector Ltd
+Copyright 2022-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { FC, FormEventHandler, ReactNode, useCallback, useState } from "react";
-import { MatrixClient } from "matrix-js-sdk/src/client";
+import { type FC, type FormEventHandler, useCallback, useState } from "react";
+import { type MatrixClient } from "matrix-js-sdk/src/client";
 import { Trans, useTranslation } from "react-i18next";
-import { useHistory } from "react-router-dom";
+import { Button, Heading, Text } from "@vector-im/compound-web";
+import { useNavigate } from "react-router-dom";
+import { logger } from "matrix-js-sdk/src/logger";
 
 import styles from "./CallEndedView.module.css";
 import feedbackStyle from "../input/FeedbackInput.module.css";
-import { Button, LinkButton } from "../button";
 import { useProfile } from "../profile/useProfile";
-import { Body, Link, Headline } from "../typography/Typography";
 import { Header, HeaderLogo, LeftNav, RightNav } from "../Header";
 import { PosthogAnalytics } from "../analytics/PosthogAnalytics";
 import { FieldRow, InputField } from "../input/Input";
 import { StarRatingInput } from "../input/StarRatingInput";
-import { RageshakeButton } from "../settings/RageshakeButton";
+import { Link } from "../button/Link";
+import { LinkButton } from "../button";
 
 interface Props {
   client: MatrixClient;
   isPasswordlessUser: boolean;
   confineToRoom: boolean;
   endedCallId: string;
-  leaveError?: Error;
-  reconnect: () => void;
 }
 
 export const CallEndedView: FC<Props> = ({
@@ -44,11 +34,9 @@ export const CallEndedView: FC<Props> = ({
   isPasswordlessUser,
   confineToRoom,
   endedCallId,
-  leaveError,
-  reconnect,
 }) => {
   const { t } = useTranslation();
-  const history = useHistory();
+  const navigate = useNavigate();
 
   const { displayName } = useProfile(client);
   const [surveySubmitted, setSurveySubmitted] = useState(false);
@@ -78,12 +66,14 @@ export const CallEndedView: FC<Props> = ({
             setSurveySubmitted(true);
           } else if (!confineToRoom) {
             // if the user already has an account immediately go back to the home screen
-            history.push("/");
+            navigate("/")?.catch((error) => {
+              logger.error("Failed to navigate to /", error);
+            });
           }
         }, 1000);
       }, 1000);
     },
-    [endedCallId, history, isPasswordlessUser, confineToRoom, starRating],
+    [endedCallId, navigate, isPasswordlessUser, confineToRoom, starRating],
   );
 
   const createAccountDialog = isPasswordlessUser && (
@@ -95,12 +85,7 @@ export const CallEndedView: FC<Props> = ({
           calls
         </p>
       </Trans>
-      <LinkButton
-        className={styles.callEndedButton}
-        size="lg"
-        variant="default"
-        to="/register"
-      >
+      <LinkButton className={styles.callEndedButton} to="/register">
         {t("call_ended_view.create_account_button")}
       </LinkButton>
     </div>
@@ -136,8 +121,6 @@ export const CallEndedView: FC<Props> = ({
             <Button
               type="submit"
               className={styles.submitButton}
-              size="lg"
-              variant="default"
               data-testid="home_go"
             >
               {submitting ? t("submitting") : t("action.submit")}
@@ -148,73 +131,32 @@ export const CallEndedView: FC<Props> = ({
     </div>
   );
 
-  const renderBody = (): ReactNode => {
-    if (leaveError) {
-      return (
-        <>
-          <main className={styles.main}>
-            <Headline className={styles.headline}>
-              <Trans i18nKey="call_ended_view.body">
-                You were disconnected from the call
-              </Trans>
-            </Headline>
-            <div className={styles.disconnectedButtons}>
-              <Button size="lg" variant="default" onClick={reconnect}>
-                {t("call_ended_view.reconnect_button")}
-              </Button>
-              <div className={styles.rageshakeButton}>
-                <RageshakeButton description="***Call disconnected***" />
-              </div>
-            </div>
-          </main>
-          {!confineToRoom && (
-            <Body className={styles.footer}>
-              <Link color="primary" to="/">
-                {t("return_home_button")}
-              </Link>
-            </Body>
-          )}
-        </>
-      );
-    } else {
-      return (
-        <>
-          <main className={styles.main}>
-            <Headline className={styles.headline}>
-              {surveySubmitted
-                ? t("call_ended_view.headline", {
-                    displayName,
-                  })
-                : t("call_ended_view.headline", {
-                    displayName,
-                  }) +
-                  "\n" +
-                  t("call_ended_view.survey_prompt")}
-            </Headline>
-            {(!surveySubmitted || confineToRoom) &&
-            PosthogAnalytics.instance.isEnabled()
-              ? qualitySurveyDialog
-              : createAccountDialog}
-          </main>
-          {!confineToRoom && (
-            <Body className={styles.footer}>
-              <Link color="primary" to="/">
-                {t("call_ended_view.not_now_button")}
-              </Link>
-            </Body>
-          )}
-        </>
-      );
-    }
-  };
-
   return (
     <>
       <Header>
         <LeftNav>{!confineToRoom && <HeaderLogo />}</LeftNav>
         <RightNav />
       </Header>
-      <div className={styles.container}>{renderBody()}</div>
+      <div className={styles.container}>
+        <main className={styles.main}>
+          <Heading size="xl" weight="semibold" className={styles.headline}>
+            {surveySubmitted
+              ? t("call_ended_view.headline", { displayName })
+              : t("call_ended_view.headline", { displayName }) +
+                "\n" +
+                t("call_ended_view.survey_prompt")}
+          </Heading>
+          {(!surveySubmitted || confineToRoom) &&
+          PosthogAnalytics.instance.isEnabled()
+            ? qualitySurveyDialog
+            : createAccountDialog}
+        </main>
+        {!confineToRoom && (
+          <Text className={styles.footer}>
+            <Link to="/"> {t("call_ended_view.not_now_button")} </Link>
+          </Text>
+        )}
+      </div>
     </>
   );
 };

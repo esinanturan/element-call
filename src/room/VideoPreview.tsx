@@ -1,33 +1,20 @@
 /*
-Copyright 2022 - 2024 New Vector Ltd
+Copyright 2022-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { useEffect, useMemo, useRef, FC, ReactNode, useCallback } from "react";
+import { useEffect, useMemo, useRef, type FC, type ReactNode } from "react";
 import useMeasure from "react-use-measure";
-import { ResizeObserver } from "@juggle/resize-observer";
-import { usePreviewTracks } from "@livekit/components-react";
-import { LocalVideoTrack, Track } from "livekit-client";
+import { facingModeFromLocalTrack, type LocalVideoTrack } from "livekit-client";
 import classNames from "classnames";
-import { logger } from "matrix-js-sdk/src/logger";
+import { useTranslation } from "react-i18next";
 
-import { Avatar } from "../Avatar";
+import { TileAvatar } from "../tile/TileAvatar";
 import styles from "./VideoPreview.module.css";
-import { useMediaDevices } from "../livekit/MediaDevicesContext";
-import { MuteStates } from "./MuteStates";
-import { useInitial } from "../useInitial";
-import { EncryptionSystem } from "../e2ee/sharedKeyManagement";
+import { type MuteStates } from "./MuteStates";
+import { type EncryptionSystem } from "../e2ee/sharedKeyManagement";
 
 export type MatrixInfo = {
   userId: string;
@@ -43,64 +30,18 @@ export type MatrixInfo = {
 interface Props {
   matrixInfo: MatrixInfo;
   muteStates: MuteStates;
+  videoTrack: LocalVideoTrack | null;
   children: ReactNode;
 }
 
 export const VideoPreview: FC<Props> = ({
   matrixInfo,
   muteStates,
+  videoTrack,
   children,
 }) => {
-  const [previewRef, previewBounds] = useMeasure({ polyfill: ResizeObserver });
-
-  const devices = useMediaDevices();
-
-  // Capture the audio options as they were when we first mounted, because
-  // we're not doing anything with the audio anyway so we don't need to
-  // re-open the devices when they change (see below).
-  const initialAudioOptions = useInitial(
-    () =>
-      muteStates.audio.enabled && { deviceId: devices.audioInput.selectedId },
-  );
-
-  const localTrackOptions = useMemo(
-    () => ({
-      // The only reason we request audio here is to get the audio permission
-      // request over with at the same time. But changing the audio settings
-      // shouldn't cause this hook to recreate the track, which is why we
-      // reference the initial values here.
-      // We also pass in a clone because livekit mutates the object passed in,
-      // which would cause the devices to be re-opened on the next render.
-      audio: Object.assign({}, initialAudioOptions),
-      video: muteStates.video.enabled && {
-        deviceId: devices.videoInput.selectedId,
-      },
-    }),
-    [
-      initialAudioOptions,
-      devices.videoInput.selectedId,
-      muteStates.video.enabled,
-    ],
-  );
-
-  const onError = useCallback(
-    (error: Error) => {
-      logger.error("Error while creating preview Tracks:", error);
-      muteStates.audio.setEnabled?.(false);
-      muteStates.video.setEnabled?.(false);
-    },
-    [muteStates.audio, muteStates.video],
-  );
-
-  const tracks = usePreviewTracks(localTrackOptions, onError);
-
-  const videoTrack = useMemo(
-    () =>
-      tracks?.find((t) => t.kind === Track.Kind.Video) as
-        | LocalVideoTrack
-        | undefined,
-    [tracks],
-  );
+  const { t } = useTranslation();
+  const [previewRef, previewBounds] = useMeasure();
 
   const videoEl = useRef<HTMLVideoElement | null>(null);
 
@@ -114,9 +55,20 @@ export const VideoPreview: FC<Props> = ({
     };
   }, [videoTrack]);
 
+  const cameraIsStarting = useMemo(
+    () => muteStates.video.enabled && !videoTrack,
+    [muteStates.video.enabled, videoTrack],
+  );
+
   return (
     <div className={classNames(styles.preview)} ref={previewRef}>
       <video
+        className={
+          videoTrack &&
+          facingModeFromLocalTrack(videoTrack).facingMode === "user"
+            ? styles.mirror
+            : undefined
+        }
         ref={videoEl}
         muted
         playsInline
@@ -124,15 +76,23 @@ export const VideoPreview: FC<Props> = ({
         tabIndex={-1}
         disablePictureInPicture
       />
-      {!muteStates.video.enabled && (
-        <div className={styles.avatarContainer}>
-          <Avatar
-            id={matrixInfo.userId}
-            name={matrixInfo.displayName}
-            size={Math.min(previewBounds.width, previewBounds.height) / 2}
-            src={matrixInfo.avatarUrl}
-          />
-        </div>
+      {(!muteStates.video.enabled || cameraIsStarting) && (
+        <>
+          <div className={styles.avatarContainer}>
+            {cameraIsStarting && (
+              <div className={styles.cameraStarting} role="status">
+                {t("video_tile.camera_starting")}
+              </div>
+            )}
+            <TileAvatar
+              id={matrixInfo.userId}
+              name={matrixInfo.displayName}
+              size={Math.min(previewBounds.width, previewBounds.height) / 2}
+              src={matrixInfo.avatarUrl}
+              loading={cameraIsStarting}
+            />
+          </div>
+        </>
       )}
       <div className={styles.buttonBar}>{children}</div>
     </div>

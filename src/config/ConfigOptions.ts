@@ -1,17 +1,8 @@
 /*
-Copyright 2022 New Vector Ltd
+Copyright 2022-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
 export interface ConfigOptions {
@@ -60,7 +51,7 @@ export interface ConfigOptions {
     // a livekit service url in the client well-known.
     // The well known needs to be formatted like so:
     // {"type":"livekit", "livekit_service_url":"https://livekit.example.com"}
-    // and stored under the key: "livekit_focus"
+    // and stored under the key: "org.matrix.msc4143.rtc_foci"
     livekit_service_url: string;
   };
 
@@ -86,6 +77,49 @@ export interface ConfigOptions {
    * A link to the end-user license agreement (EULA)
    */
   eula: string;
+
+  media_devices?: {
+    /**
+     * Defines whether participants should start with audio enabled by default.
+     */
+    enable_audio?: boolean;
+    /**
+     * Defines whether participants should start with video enabled by default.
+     */
+    enable_video?: boolean;
+  };
+
+  /**
+   * Whether upon entering a room, the user should be prompted to launch the
+   * native mobile app. (Affects only Android and iOS.)
+   *
+   * Note that this can additionally be disabled by the app's URL parameters.
+   */
+  app_prompt?: boolean;
+
+  /**
+   * These are low level options that are used to configure the MatrixRTC session.
+   * Take care when changing these options.
+   */
+  matrix_rtc_session?: {
+    /**
+     * How long (in milliseconds) to wait before rotating end-to-end media encryption keys
+     * when someone leaves a call.
+     */
+    key_rotation_on_leave_delay?: number;
+
+    /**
+     * How often (in milliseconds) keep-alive messages should be sent to the server for
+     * the MatrixRTC membership event.
+     */
+    membership_keep_alive_period?: number;
+
+    /**
+     * How long (in milliseconds) after the last keep-alive the server should expire the
+     * MatrixRTC membership event.
+     */
+    membership_server_side_expiry_timeout?: number;
+  };
 }
 
 // Overrides members from ConfigOptions that are always provided by the
@@ -97,6 +131,11 @@ export interface ResolvedConfigOptions extends ConfigOptions {
       server_name: string;
     };
   };
+  media_devices: {
+    enable_audio: boolean;
+    enable_video: boolean;
+  };
+  app_prompt: boolean;
 }
 
 export const DEFAULT_CONFIG: ResolvedConfigOptions = {
@@ -106,5 +145,13 @@ export const DEFAULT_CONFIG: ResolvedConfigOptions = {
       server_name: "localhost",
     },
   },
+  features: {
+    feature_use_device_session_member_events: true,
+  },
   eula: "https://static.element.io/legal/online-EULA.pdf",
+  media_devices: {
+    enable_audio: true,
+    enable_video: true,
+  },
+  app_prompt: true,
 };

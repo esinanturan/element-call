@@ -1,22 +1,18 @@
 /*
-Copyright 2022-2023 New Vector Ltd
+Copyright 2022-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { RefObject, useCallback, useMemo, useRef } from "react";
+import { type RefObject, useCallback, useMemo, useRef } from "react";
 
 import { useEventTarget } from "./useEvents";
+import {
+  type ReactionOption,
+  ReactionSet,
+  ReactionsRowSize,
+} from "./reactions";
 
 /**
  * Determines whether focus is in the same part of the tree as the given
@@ -27,11 +23,17 @@ const mayReceiveKeyEvents = (e: HTMLElement): boolean => {
   return focusedElement !== null && focusedElement.contains(e);
 };
 
+const KeyToReactionMap: Record<string, ReactionOption> = Object.fromEntries(
+  ReactionSet.slice(0, ReactionsRowSize).map((r, i) => [(i + 1).toString(), r]),
+);
+
 export function useCallViewKeyboardShortcuts(
   focusElement: RefObject<HTMLElement | null>,
   toggleMicrophoneMuted: () => void,
   toggleLocalVideoMuted: () => void,
   setMicrophoneMuted: (muted: boolean) => void,
+  sendReaction: (reaction: ReactionOption) => void,
+  toggleHandRaised: () => void,
 ): void {
   const spacebarHeld = useRef(false);
 
@@ -45,6 +47,8 @@ export function useCallViewKeyboardShortcuts(
       (event: KeyboardEvent) => {
         if (focusElement.current === null) return;
         if (!mayReceiveKeyEvents(focusElement.current)) return;
+        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey)
+          return;
 
         if (event.key === "m") {
           event.preventDefault();
@@ -58,6 +62,12 @@ export function useCallViewKeyboardShortcuts(
             spacebarHeld.current = true;
             setMicrophoneMuted(false);
           }
+        } else if (event.key === "h") {
+          event.preventDefault();
+          toggleHandRaised();
+        } else if (KeyToReactionMap[event.key]) {
+          event.preventDefault();
+          sendReaction(KeyToReactionMap[event.key]);
         }
       },
       [
@@ -65,6 +75,8 @@ export function useCallViewKeyboardShortcuts(
         toggleLocalVideoMuted,
         toggleMicrophoneMuted,
         setMicrophoneMuted,
+        sendReaction,
+        toggleHandRaised,
       ],
     ),
     // Because this is set on the window, to prevent shortcuts from activating

@@ -1,47 +1,38 @@
 /*
-Copyright 2023 New Vector Ltd
+Copyright 2023, 2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
 import {
   ConnectionState,
-  E2EEOptions,
+  type E2EEManagerOptions,
   ExternalE2EEKeyProvider,
   Room,
-  RoomOptions,
+  type RoomOptions,
   Track,
 } from "livekit-client";
 import { useEffect, useMemo, useRef } from "react";
 import E2EEWorker from "livekit-client/e2ee-worker?worker";
 import { logger } from "matrix-js-sdk/src/logger";
-import { MatrixRTCSession } from "matrix-js-sdk/src/matrixrtc/MatrixRTCSession";
+import { type MatrixRTCSession } from "matrix-js-sdk/src/matrixrtc/MatrixRTCSession";
 
 import { defaultLiveKitOptions } from "./options";
-import { SFUConfig } from "./openIDSFU";
-import { MuteStates } from "../room/MuteStates";
+import { type SFUConfig } from "./openIDSFU";
+import { type MuteStates } from "../room/MuteStates";
 import {
-  MediaDevice,
-  MediaDevices,
+  type MediaDevice,
+  type MediaDevices,
   useMediaDevices,
 } from "./MediaDevicesContext";
 import {
-  ECConnectionState,
+  type ECConnectionState,
   useECConnectionState,
 } from "./useECConnectionState";
 import { MatrixKeyProvider } from "../e2ee/matrixKeyProvider";
 import { E2eeType } from "../e2ee/e2eeType";
-import { EncryptionSystem } from "../e2ee/sharedKeyManagement";
+import { type EncryptionSystem } from "../e2ee/sharedKeyManagement";
 
 interface UseLivekitResult {
   livekitRoom?: Room;
@@ -54,7 +45,7 @@ export function useLiveKit(
   sfuConfig: SFUConfig | undefined,
   e2eeSystem: EncryptionSystem,
 ): UseLivekitResult {
-  const e2eeOptions = useMemo((): E2EEOptions | undefined => {
+  const e2eeOptions = useMemo((): E2EEManagerOptions | undefined => {
     if (e2eeSystem.kind === E2eeType.NONE) return undefined;
 
     if (e2eeSystem.kind === E2eeType.PER_PARTICIPANT) {
@@ -76,9 +67,11 @@ export function useLiveKit(
     if (e2eeSystem.kind === E2eeType.PER_PARTICIPANT) {
       (e2eeOptions.keyProvider as MatrixKeyProvider).setRTCSession(rtcSession);
     } else if (e2eeSystem.kind === E2eeType.SHARED_KEY && e2eeSystem.secret) {
-      (e2eeOptions.keyProvider as ExternalE2EEKeyProvider).setKey(
-        e2eeSystem.secret,
-      );
+      (e2eeOptions.keyProvider as ExternalE2EEKeyProvider)
+        .setKey(e2eeSystem.secret)
+        .catch((e) => {
+          logger.error("Failed to set shared key for E2EE", e);
+        });
     }
   }, [e2eeOptions, e2eeSystem, rtcSession]);
 
@@ -121,7 +114,9 @@ export function useLiveKit(
   // useEffect() with an argument that references itself, if E2EE is enabled
   const room = useMemo(() => {
     const r = new Room(roomOptions);
-    r.setE2EEEnabled(e2eeSystem.kind !== E2eeType.NONE);
+    r.setE2EEEnabled(e2eeSystem.kind !== E2eeType.NONE).catch((e) => {
+      logger.error("Failed to set E2EE enabled on room", e);
+    });
     return r;
   }, [roomOptions, e2eeSystem]);
 
@@ -226,7 +221,7 @@ export function useLiveKit(
               // itself we need might need to update the mute state right away.
               // This async recursion makes sure that setCamera/MicrophoneEnabled is
               // called as little times as possible.
-              syncMuteState(iterCount + 1, type);
+              await syncMuteState(iterCount + 1, type);
             } else {
               throw new Error(
                 "track with new mute state could not be published",
@@ -235,7 +230,7 @@ export function useLiveKit(
           } catch (e) {
             if ((e as DOMException).name === "NotAllowedError") {
               logger.error(
-                "Fatal errror while syncing mute state: resetting",
+                "Fatal error while syncing mute state: resetting",
                 e,
               );
               if (type === MuteDevice.Microphone) {
@@ -250,14 +245,25 @@ export function useLiveKit(
                 "Failed to sync audio mute state with LiveKit (will retry to sync in 1s):",
                 e,
               );
-              setTimeout(() => syncMuteState(iterCount + 1, type), 1000);
+              setTimeout(() => {
+                syncMuteState(iterCount + 1, type).catch((e) => {
+                  logger.error(
+                    `Failed to sync ${MuteDevice[type]} mute state with LiveKit iterCount=${iterCount + 1}`,
+                    e,
+                  );
+                });
+              }, 1000);
             }
           }
         }
       };
 
-      syncMuteState(0, MuteDevice.Microphone);
-      syncMuteState(0, MuteDevice.Camera);
+      syncMuteState(0, MuteDevice.Microphone).catch((e) => {
+        logger.error("Failed to sync audio mute state with LiveKit", e);
+      });
+      syncMuteState(0, MuteDevice.Camera).catch((e) => {
+        logger.error("Failed to sync video mute state with LiveKit", e);
+      });
     }
   }, [room, muteStates, connectionState]);
 
@@ -284,18 +290,14 @@ export function useLiveKit(
             room.localParticipant.audioTrackPublications.values(),
           ).find((d) => d.source === Track.Source.Microphone)?.track;
 
-          const defaultDevice = device.available.find(
-            (d) => d.deviceId === "default",
-          );
           if (
-            defaultDevice &&
             activeMicTrack &&
             // only restart if the stream is still running: LiveKit will detect
             // when a track stops & restart appropriately, so this is not our job.
             // Plus, we need to avoid restarting again if the track is already in
             // the process of being restarted.
             activeMicTrack.mediaStreamTrack.readyState !== "ended" &&
-            defaultDevice.groupId !==
+            device.selectedGroupId !==
               activeMicTrack.mediaStreamTrack.getSettings().groupId
           ) {
             // It's different, so restart the track, ie. cause Livekit to do another
@@ -304,7 +306,10 @@ export function useLiveKit(
             // the deviceId hasn't changed (was & still is default).
             room.localParticipant
               .getTrackPublication(Track.Source.Microphone)
-              ?.audioTrack?.restartTrack();
+              ?.audioTrack?.restartTrack()
+              .catch((e) => {
+                logger.error(`Failed to restart audio device track`, e);
+              });
           }
         } else {
           if (id !== undefined && room.getActiveDevice(kind) !== id) {

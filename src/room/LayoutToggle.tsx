@@ -1,20 +1,11 @@
 /*
-Copyright 2023 New Vector Ltd
+Copyright 2023, 2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { ChangeEvent, FC, useCallback, useId } from "react";
+import { type ChangeEvent, type FC, type TouchEvent, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Tooltip } from "@vector-im/compound-web";
 import {
@@ -31,9 +22,15 @@ interface Props {
   layout: Layout;
   setLayout: (layout: Layout) => void;
   className?: string;
+  onTouchEnd?: (e: TouchEvent) => void;
 }
 
-export const LayoutToggle: FC<Props> = ({ layout, setLayout, className }) => {
+export const LayoutToggle: FC<Props> = ({
+  layout,
+  setLayout,
+  className,
+  onTouchEnd,
+}) => {
   const { t } = useTranslation();
 
   const onChange = useCallback(
@@ -41,45 +38,30 @@ export const LayoutToggle: FC<Props> = ({ layout, setLayout, className }) => {
     [setLayout],
   );
 
-  const spotlightId = useId();
-  const gridId = useId();
-
   return (
     <div className={classNames(styles.toggle, className)}>
-      <input
-        id={spotlightId}
-        type="radio"
-        name="layout"
-        value="spotlight"
-        checked={layout === "spotlight"}
-        onChange={onChange}
-      />
       <Tooltip label={t("layout_spotlight_label")}>
-        <label htmlFor={spotlightId}>
-          <SpotlightIcon
-            aria-label={t("layout_spotlight_label")}
-            width={24}
-            height={24}
-          />
-        </label>
+        <input
+          type="radio"
+          name="layout"
+          value="spotlight"
+          checked={layout === "spotlight"}
+          onChange={onChange}
+          onTouchEnd={onTouchEnd}
+        />
       </Tooltip>
-      <input
-        id={gridId}
-        type="radio"
-        name="layout"
-        value="grid"
-        checked={layout === "grid"}
-        onChange={onChange}
-      />
+      <SpotlightIcon aria-hidden width={24} height={24} />
       <Tooltip label={t("layout_grid_label")}>
-        <label htmlFor={gridId}>
-          <GridIcon
-            aria-label={t("layout_grid_label")}
-            width={24}
-            height={24}
-          />
-        </label>
+        <input
+          type="radio"
+          name="layout"
+          value="grid"
+          checked={layout === "grid"}
+          onChange={onChange}
+          onTouchEnd={onTouchEnd}
+        />
       </Tooltip>
+      <GridIcon aria-hidden width={24} height={24} />
     </div>
   );
 };

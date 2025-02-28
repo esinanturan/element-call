@@ -1,22 +1,14 @@
 /*
-Copyright 2023 New Vector Ltd
+Copyright 2023, 2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { FC, useCallback } from "react";
+import { type FC, useCallback } from "react";
 import { Root, Track, Range, Thumb } from "@radix-ui/react-slider";
 import classNames from "classnames";
+import { Tooltip } from "@vector-im/compound-web";
 
 import styles from "./Slider.module.css";
 
@@ -24,7 +16,17 @@ interface Props {
   className?: string;
   label: string;
   value: number;
+  /**
+   * Event handler called when the value changes during an interaction.
+   */
   onValueChange: (value: number) => void;
+  /**
+   * Event handler called when the value changes at the end of an interaction.
+   * Useful when you only need to capture a final value to update a backend
+   * service, or when you want to remember the last value that the user
+   * "committed" to.
+   */
+  onValueCommit?: (value: number) => void;
   min: number;
   max: number;
   step: number;
@@ -39,6 +41,7 @@ export const Slider: FC<Props> = ({
   label,
   value,
   onValueChange: onValueChangeProp,
+  onValueCommit: onValueCommitProp,
   min,
   max,
   step,
@@ -48,12 +51,17 @@ export const Slider: FC<Props> = ({
     ([v]: number[]) => onValueChangeProp(v),
     [onValueChangeProp],
   );
+  const onValueCommit = useCallback(
+    ([v]: number[]) => onValueCommitProp?.(v),
+    [onValueCommitProp],
+  );
 
   return (
     <Root
       className={classNames(className, styles.slider)}
       value={[value]}
       onValueChange={onValueChange}
+      onValueCommit={onValueCommit}
       min={min}
       max={max}
       step={step}
@@ -62,7 +70,10 @@ export const Slider: FC<Props> = ({
       <Track className={styles.track}>
         <Range className={styles.highlight} />
       </Track>
-      <Thumb className={styles.handle} aria-label={label} />
+      {/* Note: This is expected not to be visible on mobile.*/}
+      <Tooltip placement="top" label={Math.round(value * 100).toString() + "%"}>
+        <Thumb className={styles.handle} aria-label={label} />
+      </Tooltip>
     </Root>
   );
 };

@@ -1,31 +1,28 @@
 /*
-Copyright 2022 - 2023 New Vector Ltd
+Copyright 2022-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
- */
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
+*/
 
 import { useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { logger } from "matrix-js-sdk/src/logger";
 
 import { Config } from "./config/Config";
-import { EncryptionSystem } from "./e2ee/sharedKeyManagement";
+import { type EncryptionSystem } from "./e2ee/sharedKeyManagement";
 import { E2eeType } from "./e2ee/e2eeType";
 
 interface RoomIdentifier {
   roomAlias: string | null;
   roomId: string | null;
   viaServers: string[];
+}
+
+export enum UserIntent {
+  StartNewCall = "start_call",
+  JoinExistingCall = "join_existing",
+  Unknown = "unknown",
 }
 
 // If you need to add a new flag to this interface, prefer a name that describes
@@ -52,6 +49,8 @@ export interface UrlParams {
   /**
    * Whether upon entering a room, the user should be prompted to launch the
    * native mobile app. (Affects only Android and iOS.)
+   *
+   * The app prompt must also be enabled in the config for this to take effect.
    */
   appPrompt: boolean;
   /**
@@ -149,6 +148,13 @@ export interface UrlParams {
    * creating a spa link.
    */
   homeserver: string | null;
+
+  /**
+   * The user's intent with respect to the call.
+   * e.g. if they clicked a Start Call button, this would be `start_call`.
+   * If it was a Join Call button, it would be `join_existing`.
+   */
+  intent: string | null;
 }
 
 // This is here as a stopgap, but what would be far nicer is a function that
@@ -218,9 +224,17 @@ export const getUrlParams = (
 
   const fontScale = parseFloat(parser.getParam("fontScale") ?? "");
 
+  let intent = parser.getParam("intent");
+  if (!intent || !Object.values(UserIntent).includes(intent as UserIntent)) {
+    intent = UserIntent.Unknown;
+  }
+  const widgetId = parser.getParam("widgetId");
+  const parentUrl = parser.getParam("parentUrl");
+  const isWidget = !!widgetId && !!parentUrl;
+
   return {
-    widgetId: parser.getParam("widgetId"),
-    parentUrl: parser.getParam("parentUrl"),
+    widgetId,
+    parentUrl,
 
     // NB. we don't validate roomId here as we do in getRoomIdentifierFromUrl:
     // what would we do if it were invalid? If the widget API says that's what
@@ -231,26 +245,30 @@ export const getUrlParams = (
     confineToRoom:
       parser.getFlagParam("confineToRoom") || parser.getFlagParam("embed"),
     appPrompt: parser.getFlagParam("appPrompt", true),
-    preload: parser.getFlagParam("preload"),
+    preload: isWidget ? parser.getFlagParam("preload") : false,
     hideHeader: parser.getFlagParam("hideHeader"),
     showControls: parser.getFlagParam("showControls", true),
     hideScreensharing: parser.getFlagParam("hideScreensharing"),
     e2eEnabled: parser.getFlagParam("enableE2EE", true),
-    userId: parser.getParam("userId"),
+    userId: isWidget ? parser.getParam("userId") : null,
     displayName: parser.getParam("displayName"),
-    deviceId: parser.getParam("deviceId"),
-    baseUrl: parser.getParam("baseUrl"),
+    deviceId: isWidget ? parser.getParam("deviceId") : null,
+    baseUrl: isWidget ? parser.getParam("baseUrl") : null,
     lang: parser.getParam("lang"),
     fonts: parser.getAllParams("font"),
     fontScale: Number.isNaN(fontScale) ? null : fontScale,
     analyticsID: parser.getParam("analyticsID"),
     allowIceFallback: parser.getFlagParam("allowIceFallback"),
     perParticipantE2EE: parser.getFlagParam("perParticipantE2EE"),
-    skipLobby: parser.getFlagParam("skipLobby"),
-    returnToLobby: parser.getFlagParam("returnToLobby"),
+    skipLobby: parser.getFlagParam(
+      "skipLobby",
+      isWidget && intent === UserIntent.StartNewCall,
+    ),
+    returnToLobby: isWidget ? parser.getFlagParam("returnToLobby") : true,
     theme: parser.getParam("theme"),
-    viaServers: parser.getParam("viaServers"),
-    homeserver: parser.getParam("homeserver"),
+    viaServers: !isWidget ? parser.getParam("viaServers") : null,
+    homeserver: !isWidget ? parser.getParam("homeserver") : null,
+    intent,
   };
 };
 

@@ -1,30 +1,50 @@
 /*
-Copyright 2024 New Vector Ltd
+Copyright 2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { WidgetApiToWidgetAction } from "matrix-widget-api";
+import { type IThemeChangeActionRequest } from "matrix-widget-api/lib/interfaces/ThemeChangeAction";
 
-import { useUrlParams } from "./UrlParams";
+import { getUrlParams } from "./UrlParams";
+import { widget } from "./widget";
 
 export const useTheme = (): void => {
-  const { theme: themeName } = useUrlParams();
+  const [requestedTheme, setRequestedTheme] = useState(
+    () => getUrlParams().theme,
+  );
   const previousTheme = useRef<string | null>(document.body.classList.item(0));
+
+  useEffect(() => {
+    if (widget) {
+      const onThemeChange = (
+        ev: CustomEvent<IThemeChangeActionRequest>,
+      ): void => {
+        ev.preventDefault();
+        if ("name" in ev.detail.data && typeof ev.detail.data.name === "string")
+          setRequestedTheme(ev.detail.data.name);
+        widget!.api.transport.reply(ev.detail, {});
+      };
+
+      widget.lazyActions.on(WidgetApiToWidgetAction.ThemeChange, onThemeChange);
+      return (): void => {
+        widget!.lazyActions.off(
+          WidgetApiToWidgetAction.ThemeChange,
+          onThemeChange,
+        );
+      };
+    }
+  }, []);
+
   useLayoutEffect(() => {
-    // If the url does not contain a theme props we default to "dark".
-    const theme = themeName?.includes("light") ? "light" : "dark";
-    const themeHighContrast = themeName?.includes("high-contrast") ? "-hc" : "";
+    // If no theme has been explicitly requested we default to dark
+    const theme = requestedTheme?.includes("light") ? "light" : "dark";
+    const themeHighContrast = requestedTheme?.includes("high-contrast")
+      ? "-hc"
+      : "";
     const themeString = "cpd-theme-" + theme + themeHighContrast;
     if (themeString !== previousTheme.current) {
       document.body.classList.remove(
@@ -37,5 +57,5 @@ export const useTheme = (): void => {
       previousTheme.current = themeString;
     }
     document.body.classList.remove("no-theme");
-  }, [previousTheme, themeName]);
+  }, [previousTheme, requestedTheme]);
 };

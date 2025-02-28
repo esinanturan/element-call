@@ -1,42 +1,43 @@
 /*
-Copyright 2022-2023 New Vector Ltd
+Copyright 2022-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { FC, useCallback, useState } from "react";
+import { type FC, useCallback, useMemo, useState, type JSX } from "react";
 import { useTranslation } from "react-i18next";
-import { MatrixClient } from "matrix-js-sdk/src/matrix";
-import { Button, Link } from "@vector-im/compound-web";
+import { type MatrixClient } from "matrix-js-sdk/src/matrix";
+import { Button } from "@vector-im/compound-web";
 import classNames from "classnames";
-import { useHistory } from "react-router-dom";
+import { logger } from "matrix-js-sdk/src/logger";
+import { usePreviewTracks } from "@livekit/components-react";
+import { type LocalVideoTrack, Track } from "livekit-client";
+import { useObservable } from "observable-hooks";
+import { map } from "rxjs";
+import { useNavigate } from "react-router-dom";
 
 import inCallStyles from "./InCallView.module.css";
 import styles from "./LobbyView.module.css";
 import { Header, LeftNav, RightNav, RoomHeaderInfo } from "../Header";
-import { useLocationNavigation } from "../useLocationNavigation";
-import { MatrixInfo, VideoPreview } from "./VideoPreview";
-import { MuteStates } from "./MuteStates";
+import { type MatrixInfo, VideoPreview } from "./VideoPreview";
+import { type MuteStates } from "./MuteStates";
 import { InviteButton } from "../button/InviteButton";
 import {
-  HangupButton,
+  EndCallButton,
   MicButton,
   SettingsButton,
+  SwitchCameraButton,
   VideoButton,
 } from "../button/Button";
 import { SettingsModal, defaultSettingsTab } from "../settings/SettingsModal";
 import { useMediaQuery } from "../useMediaQuery";
 import { E2eeType } from "../e2ee/e2eeType";
+import { Link } from "../button/Link";
+import { useMediaDevices } from "../livekit/MediaDevicesContext";
+import { useInitial } from "../useInitial";
+import { useSwitchCamera } from "./useSwitchCamera";
+import { usePageTitle } from "../usePageTitle";
 
 interface Props {
   client: MatrixClient;
@@ -64,7 +65,7 @@ export const LobbyView: FC<Props> = ({
   waitingForInvite,
 }) => {
   const { t } = useTranslation();
-  useLocationNavigation();
+  usePageTitle(matrixInfo.roomName);
 
   const onAudioPress = useCallback(
     () => muteStates.audio.setEnabled?.((e) => !e),
@@ -87,14 +88,73 @@ export const LobbyView: FC<Props> = ({
     [setSettingsModalOpen],
   );
 
-  const history = useHistory();
-  const onLeaveClick = useCallback(() => history.push("/"), [history]);
+  const navigate = useNavigate();
+  const onLeaveClick = useCallback(() => {
+    navigate("/")?.catch((error) => {
+      logger.error("Failed to navigate to /", error);
+    });
+  }, [navigate]);
 
   const recentsButtonInFooter = useMediaQuery("(max-height: 500px)");
   const recentsButton = !confineToRoom && (
-    <Link className={styles.recents} href="#" onClick={onLeaveClick}>
+    <Link className={styles.recents} to="/">
       {t("lobby.leave_button")}
     </Link>
+  );
+
+  const devices = useMediaDevices();
+
+  // Capture the audio options as they were when we first mounted, because
+  // we're not doing anything with the audio anyway so we don't need to
+  // re-open the devices when they change (see below).
+  const initialAudioOptions = useInitial(
+    () =>
+      muteStates.audio.enabled && { deviceId: devices.audioInput.selectedId },
+  );
+
+  const localTrackOptions = useMemo(
+    () => ({
+      // The only reason we request audio here is to get the audio permission
+      // request over with at the same time. But changing the audio settings
+      // shouldn't cause this hook to recreate the track, which is why we
+      // reference the initial values here.
+      // We also pass in a clone because livekit mutates the object passed in,
+      // which would cause the devices to be re-opened on the next render.
+      audio: Object.assign({}, initialAudioOptions),
+      video: muteStates.video.enabled && {
+        deviceId: devices.videoInput.selectedId,
+      },
+    }),
+    [
+      initialAudioOptions,
+      devices.videoInput.selectedId,
+      muteStates.video.enabled,
+    ],
+  );
+
+  const onError = useCallback(
+    (error: Error) => {
+      logger.error("Error while creating preview Tracks:", error);
+      muteStates.audio.setEnabled?.(false);
+      muteStates.video.setEnabled?.(false);
+    },
+    [muteStates.audio, muteStates.video],
+  );
+
+  const tracks = usePreviewTracks(localTrackOptions, onError);
+
+  const videoTrack = useMemo(
+    () =>
+      (tracks?.find((t) => t.kind === Track.Kind.Video) ??
+        null) as LocalVideoTrack | null,
+    [tracks],
+  );
+
+  const switchCamera = useSwitchCamera(
+    useObservable(
+      (inputs$) => inputs$.pipe(map(([video]) => video)),
+      [videoTrack],
+    ),
   );
 
   // TODO: Unify this component with InCallView, so we can get slick joining
@@ -119,7 +179,11 @@ export const LobbyView: FC<Props> = ({
           </Header>
         )}
         <div className={styles.content}>
-          <VideoPreview matrixInfo={matrixInfo} muteStates={muteStates}>
+          <VideoPreview
+            matrixInfo={matrixInfo}
+            muteStates={muteStates}
+            videoTrack={videoTrack}
+          >
             <Button
               className={classNames(styles.join, {
                 [styles.wait]: waitingForInvite,
@@ -140,16 +204,17 @@ export const LobbyView: FC<Props> = ({
           <div className={inCallStyles.buttons}>
             <MicButton
               muted={!muteStates.audio.enabled}
-              onPress={onAudioPress}
+              onClick={onAudioPress}
               disabled={muteStates.audio.setEnabled === null}
             />
             <VideoButton
               muted={!muteStates.video.enabled}
-              onPress={onVideoPress}
+              onClick={onVideoPress}
               disabled={muteStates.video.setEnabled === null}
             />
-            <SettingsButton onPress={openSettings} />
-            {!confineToRoom && <HangupButton onPress={onLeaveClick} />}
+            {switchCamera && <SwitchCameraButton onClick={switchCamera} />}
+            <SettingsButton onClick={openSettings} />
+            {!confineToRoom && <EndCallButton onClick={onLeaveClick} />}
           </div>
         </div>
       </div>

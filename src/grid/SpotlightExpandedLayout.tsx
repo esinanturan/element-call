@@ -1,25 +1,16 @@
 /*
-Copyright 2024 New Vector Ltd
+Copyright 2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { forwardRef, useCallback, useMemo } from "react";
+import { forwardRef, useCallback } from "react";
 import { useObservableEagerState } from "observable-hooks";
 
-import { SpotlightExpandedLayout as SpotlightExpandedLayoutModel } from "../state/CallViewModel";
-import { CallLayout, GridTileModel, SpotlightTileModel } from "./CallLayout";
-import { DragCallback, useUpdateLayout } from "./Grid";
+import { type SpotlightExpandedLayout as SpotlightExpandedLayoutModel } from "../state/CallViewModel";
+import { type CallLayout } from "./CallLayout";
+import { type DragCallback, useUpdateLayout } from "./Grid";
 import styles from "./SpotlightExpandedLayout.module.css";
 
 /**
@@ -28,7 +19,7 @@ import styles from "./SpotlightExpandedLayout.module.css";
  */
 export const makeSpotlightExpandedLayout: CallLayout<
   SpotlightExpandedLayoutModel
-> = ({ pipAlignment }) => ({
+> = ({ pipAlignment$ }) => ({
   scrollingOnTop: true,
 
   fixed: forwardRef(function SpotlightExpandedLayoutFixed(
@@ -36,17 +27,13 @@ export const makeSpotlightExpandedLayout: CallLayout<
     ref,
   ) {
     useUpdateLayout();
-    const spotlightTileModel: SpotlightTileModel = useMemo(
-      () => ({ type: "spotlight", vms: model.spotlight, maximised: true }),
-      [model.spotlight],
-    );
 
     return (
       <div ref={ref} className={styles.layer}>
         <Slot
           className={styles.spotlight}
           id="spotlight"
-          model={spotlightTileModel}
+          model={model.spotlight}
         />
       </div>
     );
@@ -57,16 +44,11 @@ export const makeSpotlightExpandedLayout: CallLayout<
     ref,
   ) {
     useUpdateLayout();
-    const pipAlignmentValue = useObservableEagerState(pipAlignment);
-
-    const pipTileModel: GridTileModel | undefined = useMemo(
-      () => model.pip && { type: "grid", vm: model.pip },
-      [model.pip],
-    );
+    const pipAlignmentValue = useObservableEagerState(pipAlignment$);
 
     const onDragPip: DragCallback = useCallback(
       ({ xRatio, yRatio }) =>
-        pipAlignment.next({
+        pipAlignment$.next({
           block: yRatio < 0.5 ? "start" : "end",
           inline: xRatio < 0.5 ? "start" : "end",
         }),
@@ -75,11 +57,11 @@ export const makeSpotlightExpandedLayout: CallLayout<
 
     return (
       <div ref={ref} className={styles.layer}>
-        {pipTileModel && (
+        {model.pip && (
           <Slot
             className={styles.pip}
-            id="pip"
-            model={pipTileModel}
+            id={model.pip.id}
+            model={model.pip}
             onDrag={onDragPip}
             data-block-alignment={pipAlignmentValue.block}
             data-inline-alignment={pipAlignmentValue.inline}

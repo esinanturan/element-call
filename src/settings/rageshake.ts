@@ -1,19 +1,9 @@
 /*
+Copyright 2018-2024 New Vector Ltd.
 Copyright 2017 OpenMarket Ltd
-Copyright 2018 New Vector Ltd
-Copyright 2019 The New Vector Ltd
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
 // This module contains all the code needed to log the console, persist it to
@@ -38,10 +28,12 @@ limitations under the License.
 //    purge on startup to prevent logs from accumulating.
 
 import EventEmitter from "events";
-import { throttle } from "lodash";
-import { logger } from "matrix-js-sdk/src/logger";
-import { randomString } from "matrix-js-sdk/src/randomstring";
-import { LoggingMethod } from "loglevel";
+import { throttle } from "lodash-es";
+import { type Logger, logger } from "matrix-js-sdk/src/logger";
+import { secureRandomString } from "matrix-js-sdk/src/randomstring";
+import { type LoggingMethod } from "loglevel";
+
+import type loglevel from "loglevel";
 
 // the length of log data we keep in indexeddb (and include in the reports)
 const MAX_LOG_SIZE = 1024 * 1024 * 5; // 5 MB
@@ -94,6 +86,7 @@ class ConsoleLogger extends EventEmitter {
     // run.
     // Example line:
     // 2017-01-18T11:23:53.214Z W Failed to set badge count
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string
     let line = `${ts} ${level} ${args.join(" ")}\n`;
     // Do some cleanup
     line = line.replace(/token=[a-zA-Z0-9-]+/gm, "token=xxxxx");
@@ -135,16 +128,20 @@ class IndexedDBLogStore {
     private indexedDB: IDBFactory,
     private loggerInstance: ConsoleLogger,
   ) {
-    this.id = "instance-" + randomString(16);
+    this.id = "instance-" + secureRandomString(16);
 
     loggerInstance.on(ConsoleLoggerEvent.Log, this.onLoggerLog);
-    window.addEventListener("beforeunload", this.flush);
+    window.addEventListener("beforeunload", () => {
+      this.flush().catch((e) =>
+        logger.error("Failed to flush logs before unload", e),
+      );
+    });
   }
 
   /**
    * @return {Promise} Resolves when the store is ready.
    */
-  public connect(): Promise<void> {
+  public async connect(): Promise<void> {
     const req = this.indexedDB.open("logs");
     return new Promise((resolve, reject) => {
       req.onsuccess = (): void => {
@@ -200,16 +197,10 @@ class IndexedDBLogStore {
   // Throttled function to flush logs. We use throttle rather
   // than debounce as we want logs to be written regularly, otherwise
   // if there's a constant stream of logging, we'd never write anything.
-  private throttledFlush = throttle(
-    () => {
-      this.flush();
-    },
-    MAX_FLUSH_INTERVAL_MS,
-    {
-      leading: false,
-      trailing: true,
-    },
-  );
+  private throttledFlush = throttle(() => this.flush, MAX_FLUSH_INTERVAL_MS, {
+    leading: false,
+    trailing: true,
+  });
 
   /**
    * Flush logs to disk.
@@ -230,7 +221,7 @@ class IndexedDBLogStore {
    *
    * @return {Promise} Resolved when the logs have been flushed.
    */
-  public flush = (): Promise<void> => {
+  public flush = async (): Promise<void> => {
     // check if a flush() operation is ongoing
     if (this.flushPromise) {
       if (this.flushAgainPromise) {
@@ -238,13 +229,9 @@ class IndexedDBLogStore {
         return this.flushAgainPromise;
       }
       // queue up a flush to occur immediately after the pending one completes.
-      this.flushAgainPromise = this.flushPromise
-        .then(() => {
-          return this.flush();
-        })
-        .then(() => {
-          this.flushAgainPromise = undefined;
-        });
+      this.flushAgainPromise = this.flushPromise.then(this.flush).then(() => {
+        this.flushAgainPromise = undefined;
+      });
       return this.flushAgainPromise;
     }
     // there is no flush promise or there was but it has finished, so do
@@ -296,7 +283,7 @@ class IndexedDBLogStore {
 
     // Returns: a string representing the concatenated logs for this ID.
     // Stops adding log fragments when the size exceeds maxSize
-    function fetchLogs(id: string, maxSize: number): Promise<string> {
+    async function fetchLogs(id: string, maxSize: number): Promise<string> {
       const objectStore = db!
         .transaction("logs", "readonly")
         .objectStore("logs");
@@ -326,7 +313,7 @@ class IndexedDBLogStore {
     }
 
     // Returns: A sorted array of log IDs. (newest first)
-    function fetchLogIds(): Promise<string[]> {
+    async function fetchLogIds(): Promise<string[]> {
       // To gather all the log IDs, query for all records in logslastmod.
       const o = db!
         .transaction("logslastmod", "readonly")
@@ -346,7 +333,7 @@ class IndexedDBLogStore {
       });
     }
 
-    function deleteLogs(id: number): Promise<void> {
+    async function deleteLogs(id: number): Promise<void> {
       return new Promise<void>((resolve, reject) => {
         const txn = db!.transaction(["logs", "logslastmod"], "readwrite");
         const o = txn.objectStore("logs");
@@ -404,7 +391,7 @@ class IndexedDBLogStore {
       logger.log("Removing logs: ", removeLogIds);
       // Don't await this because it's non-fatal if we can't clean up
       // logs.
-      Promise.all(removeLogIds.map((id) => deleteLogs(id))).then(
+      Promise.all(removeLogIds.map(async (id) => deleteLogs(id))).then(
         () => {
           logger.log(`Removed ${removeLogIds.length} old logs.`);
         },
@@ -442,7 +429,7 @@ class IndexedDBLogStore {
  * @return {Promise<T[]>} Resolves to an array of whatever you returned from
  * resultMapper.
  */
-function selectQuery<T>(
+async function selectQuery<T>(
   store: IDBObjectStore,
   keyRange: IDBKeyRange | undefined,
   resultMapper: (cursor: IDBCursorWithValue) => T,
@@ -471,7 +458,7 @@ declare global {
   // eslint-disable-next-line no-var, camelcase
   var mx_rage_logger: ConsoleLogger;
   // eslint-disable-next-line no-var, camelcase
-  var mx_rage_initStoragePromise: Promise<void>;
+  var mx_rage_initStoragePromise: Promise<void> | undefined;
 }
 
 /**
@@ -481,9 +468,39 @@ declare global {
  * be set up immediately for the logs.
  * @return {Promise} Resolves when set up.
  */
-export function init(): Promise<void> {
+export async function init(): Promise<void> {
   global.mx_rage_logger = new ConsoleLogger();
-  setLogExtension(global.mx_rage_logger.log);
+
+  // configure loglevel based loggers:
+  setLogExtension(logger, global.mx_rage_logger.log);
+  // these are the child/prefixed loggers we want to capture from js-sdk
+  // there doesn't seem to be an easy way to capture all children
+  ["MatrixRTCSession", "MatrixRTCSessionManager"].forEach((loggerName) => {
+    setLogExtension(logger.getChild(loggerName), global.mx_rage_logger.log);
+  });
+
+  // intercept console logging so that we can get matrix_sdk logs:
+  // this is nasty, but no logging hooks are provided
+  [
+    "trace" as const,
+    "debug" as const,
+    "info" as const,
+    "warn" as const,
+    "error" as const,
+  ].forEach((level) => {
+    const originalMethod = window.console[level];
+    if (!originalMethod) return;
+    const prefix = `${level.toUpperCase()} matrix_sdk`;
+    window.console[level] = (...args): void => {
+      originalMethod(...args);
+      // args for calls from the matrix-sdk-crypto-wasm look like:
+      // ["DEBUG matrix_sdk_indexeddb::crypto_store: IndexedDbCryptoStore: opening main store matrix-js-sdk::matrix-sdk-crypto\n    at /home/runner/.cargo/git/checkouts/matrix-rust-sdk-1f4927f82a3d27bb/07aa6d7/crates/matrix-sdk-indexeddb/src/crypto_store/mod.rs:267"]
+      if (typeof args[0] === "string" && args[0].startsWith(prefix)) {
+        // we pass all the args on to the logger in case there are more sent in future
+        global.mx_rage_logger.log(LogLevel[level], "matrix_sdk", ...args);
+      }
+    };
+  });
 
   return tryInitStorage();
 }
@@ -493,7 +510,7 @@ export function init(): Promise<void> {
  * then this no-ops.
  * @return {Promise} Resolves when complete.
  */
-function tryInitStorage(): Promise<void> {
+async function tryInitStorage(): Promise<void> {
   if (global.mx_rage_initStoragePromise) {
     return global.mx_rage_initStoragePromise;
   }
@@ -505,7 +522,9 @@ function tryInitStorage(): Promise<void> {
   let indexedDB;
   try {
     indexedDB = window.indexedDB;
-  } catch (e) {}
+  } catch (e) {
+    logger.warn("Could not get indexDB from window.", e);
+  }
 
   if (indexedDB) {
     global.mx_rage_store = new IndexedDBLogStore(
@@ -594,10 +613,14 @@ type LogLevelString = keyof typeof LogLevel;
  * took loglevel's example honouring log levels). Adds a loglevel logging extension
  * in the recommended way.
  */
-export function setLogExtension(extension: LogExtensionFunc): void {
-  const originalFactory = logger.methodFactory;
+function setLogExtension(
+  _loggerToExtend: Logger,
+  extension: LogExtensionFunc,
+): void {
+  const loggerToExtend = _loggerToExtend as unknown as loglevel.Logger;
+  const originalFactory = loggerToExtend.methodFactory;
 
-  logger.methodFactory = function (
+  loggerToExtend.methodFactory = function (
     methodName,
     configLevel,
     loggerName,
@@ -608,11 +631,14 @@ export function setLogExtension(extension: LogExtensionFunc): void {
     const needLog = logLevel >= configLevel && logLevel < LogLevel.silent;
 
     return (...args) => {
+      // we don't send the logger name to the raw method as some of them are already outputting the prefix
       rawMethod.apply(this, args);
       if (needLog) {
-        extension(logLevel, ...args);
+        // we prefix the logger name to the extension
+        // this makes sure that the rageshake contains the logger name
+        extension(logLevel, loggerName?.toString(), ...args);
       }
     };
   };
-  logger.setLevel(logger.getLevel()); // Be sure to call setLevel method in order to apply plugin
+  loggerToExtend.setLevel(loggerToExtend.getLevel()); // Be sure to call setLevel method in order to apply plugin
 }

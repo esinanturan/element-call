@@ -1,41 +1,30 @@
 /*
-Copyright 2022 New Vector Ltd
+Copyright 2022-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { FC, useCallback, useState, FormEventHandler } from "react";
-import { useHistory } from "react-router-dom";
-import { randomString } from "matrix-js-sdk/src/randomstring";
+import { type FC, useCallback, useState, type FormEventHandler } from "react";
+import { secureRandomString } from "matrix-js-sdk/src/randomstring";
 import { Trans, useTranslation } from "react-i18next";
-import { Heading } from "@vector-im/compound-web";
+import { Button, Heading, Text } from "@vector-im/compound-web";
 import { logger } from "matrix-js-sdk/src/logger";
+import { useNavigate } from "react-router-dom";
 
 import { useClient } from "../ClientContext";
 import { Header, HeaderLogo, LeftNav, RightNav } from "../Header";
 import { UserMenuContainer } from "../UserMenuContainer";
 import { FieldRow, InputField, ErrorMessage } from "../input/Input";
-import { Button } from "../button";
 import {
   createRoom,
   getRelativeRoomUrl,
   roomAliasLocalpartFromRoomName,
   sanitiseRoomNameInput,
-} from "../matrix-utils";
+} from "../utils/matrix";
 import { useInteractiveRegistration } from "../auth/useInteractiveRegistration";
 import { JoinExistingCallModal } from "./JoinExistingCallModal";
 import { useRecaptcha } from "../auth/useRecaptcha";
-import { Body, Caption, Link } from "../typography/Typography";
 import { Form } from "../form/Form";
 import styles from "./UnauthenticatedView.module.css";
 import commonStyles from "./common.module.css";
@@ -43,16 +32,14 @@ import { generateRandomName } from "../auth/generateRandomName";
 import { AnalyticsNotice } from "../analytics/AnalyticsNotice";
 import { Config } from "../config/Config";
 import { E2eeType } from "../e2ee/e2eeType";
-import {
-  useSetting,
-  optInAnalytics as optInAnalyticsSetting,
-} from "../settings/settings";
+import { useOptInAnalytics } from "../settings/settings";
+import { ExternalLink, Link } from "../button/Link";
 
 export const UnauthenticatedView: FC = () => {
   const { setClient } = useClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error>();
-  const [optInAnalytics] = useSetting(optInAnalyticsSetting);
+  const [optInAnalytics] = useOptInAnalytics();
   const { recaptchaKey, register } = useInteractiveRegistration();
   const { execute, reset, recaptchaId } = useRecaptcha(recaptchaKey);
 
@@ -63,7 +50,7 @@ export const UnauthenticatedView: FC = () => {
     [setJoinExistingCallModalOpen],
   );
   const [onFinished, setOnFinished] = useState<() => void>();
-  const history = useHistory();
+  const navigate = useNavigate();
   const { t } = useTranslation();
 
   const onSubmit: FormEventHandler<HTMLFormElement> = useCallback(
@@ -80,7 +67,7 @@ export const UnauthenticatedView: FC = () => {
         const userName = generateRandomName();
         const [client, session] = await register(
           userName,
-          randomString(16),
+          secureRandomString(16),
           displayName,
           recaptchaResponse,
           true,
@@ -104,7 +91,9 @@ export const UnauthenticatedView: FC = () => {
             setOnFinished(() => {
               setClient({ client, session });
               const aliasLocalpart = roomAliasLocalpartFromRoomName(roomName);
-              history.push(`/${aliasLocalpart}`);
+              navigate(`/${aliasLocalpart}`)?.catch((error) => {
+                logger.error("Failed to navigate to alias localpart", error);
+              });
             });
 
             setLoading(false);
@@ -123,7 +112,7 @@ export const UnauthenticatedView: FC = () => {
           throw new Error("Failed to create room with shared secret");
 
         setClient({ client, session });
-        history.push(
+        await navigate(
           getRelativeRoomUrl(
             createRoomResult.roomId,
             { kind: E2eeType.SHARED_KEY, secret: createRoomResult.password },
@@ -143,7 +132,7 @@ export const UnauthenticatedView: FC = () => {
       register,
       reset,
       execute,
-      history,
+      navigate,
       setJoinExistingCallModalOpen,
       setClient,
     ],
@@ -191,18 +180,18 @@ export const UnauthenticatedView: FC = () => {
               />
             </FieldRow>
             {optInAnalytics === null && (
-              <Caption className={styles.notice}>
+              <Text size="sm" className={styles.notice}>
                 <AnalyticsNotice />
-              </Caption>
+              </Text>
             )}
-            <Caption className={styles.notice}>
+            <Text size="sm" className={styles.notice}>
               <Trans i18nKey="unauthenticated_view_eula_caption">
                 By clicking "Go", you agree to our{" "}
-                <Link href={Config.get().eula}>
+                <ExternalLink href={Config.get().eula}>
                   End User Licensing Agreement (EULA)
-                </Link>
+                </ExternalLink>
               </Trans>
-            </Caption>
+            </Text>
             {error && (
               <FieldRow>
                 <ErrorMessage error={error} />
@@ -220,19 +209,19 @@ export const UnauthenticatedView: FC = () => {
           </Form>
         </main>
         <footer className={styles.footer}>
-          <Body className={styles.mobileLoginLink}>
-            <Link color="primary" to="/login" data-testid="home_login">
+          <Text className={styles.mobileLoginLink}>
+            <Link to="/login" data-testid="home_login">
               {t("unauthenticated_view_login_button")}
             </Link>
-          </Body>
-          <Body>
+          </Text>
+          <Text>
             <Trans i18nKey="unauthenticated_view_body">
               Not registered yet?{" "}
-              <Link color="primary" to="/register" data-testid="home_register">
+              <Link to="/register" data-testid="home_register">
                 Create an account
               </Link>
             </Trans>
-          </Body>
+          </Text>
         </footer>
       </div>
       {onFinished && (

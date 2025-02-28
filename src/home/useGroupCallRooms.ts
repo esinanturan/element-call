@@ -1,25 +1,16 @@
 /*
-Copyright 2022 New Vector Ltd
+Copyright 2022-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { MatrixClient } from "matrix-js-sdk/src/client";
-import { Room, RoomEvent } from "matrix-js-sdk/src/models/room";
-import { RoomMember } from "matrix-js-sdk/src/models/room-member";
+import { type MatrixClient } from "matrix-js-sdk/src/client";
+import { type Room, RoomEvent } from "matrix-js-sdk/src/models/room";
+import { type RoomMember } from "matrix-js-sdk/src/models/room-member";
 import { useState, useEffect } from "react";
-import { EventTimeline, EventType, JoinRule } from "matrix-js-sdk";
-import { MatrixRTCSession } from "matrix-js-sdk/src/matrixrtc/MatrixRTCSession";
+import { EventTimeline, EventType, JoinRule } from "matrix-js-sdk/src/matrix";
+import { type MatrixRTCSession } from "matrix-js-sdk/src/matrixrtc/MatrixRTCSession";
 import { MatrixRTCSessionManagerEvents } from "matrix-js-sdk/src/matrixrtc/MatrixRTCSessionManager";
 import { KnownMembership } from "matrix-js-sdk/src/types";
 
@@ -134,7 +125,7 @@ export function useGroupCallRooms(client: MatrixClient): GroupCallRoom[] {
 
   useEffect(() => {
     function updateRooms(): void {
-      // We want to show all rooms that historically had a call and which we are (can become) part of.
+      // We want to show all rooms that historically had a call and which we are (or can become) part of.
       const rooms = client
         .getRooms()
         .filter(roomHasCallMembershipEvents)
@@ -142,7 +133,6 @@ export function useGroupCallRooms(client: MatrixClient): GroupCallRoom[] {
       const sortedRooms = sortRooms(client, rooms);
       const items = sortedRooms.map((room) => {
         const session = client.matrixRTC.getRoomSession(room);
-        session.memberships;
         return {
           roomAlias: room.getCanonicalAlias() ?? undefined,
           roomName: room.name,

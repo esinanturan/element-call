@@ -1,53 +1,42 @@
 /*
-Copyright 2023 New Vector Ltd
+Copyright 2023, 2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
 import { logger } from "matrix-js-sdk/src/logger";
 import {
-  MatrixRTCSession,
+  type MatrixRTCSession,
   MatrixRTCSessionEvent,
 } from "matrix-js-sdk/src/matrixrtc/MatrixRTCSession";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 export function useMatrixRTCSessionJoinState(
-  rtcSession: MatrixRTCSession,
+  rtcSession: MatrixRTCSession | undefined,
 ): boolean {
-  const [isJoined, setJoined] = useState(rtcSession.isJoined());
-
-  const onJoinStateChanged = useCallback(
-    (isJoined: boolean) => {
-      logger.info(
-        `Session in room ${rtcSession.room.roomId} changed to ${
-          isJoined ? "joined" : "left"
-        }`,
-      );
-      setJoined(isJoined);
-    },
-    [rtcSession],
-  );
+  const [, setNumUpdates] = useState(0);
 
   useEffect(() => {
-    rtcSession.on(MatrixRTCSessionEvent.JoinStateChanged, onJoinStateChanged);
+    if (rtcSession !== undefined) {
+      const onJoinStateChanged = (isJoined: boolean): void => {
+        logger.info(
+          `Session in room ${rtcSession.room.roomId} changed to ${
+            isJoined ? "joined" : "left"
+          }`,
+        );
+        setNumUpdates((n) => n + 1); // Force an update
+      };
+      rtcSession.on(MatrixRTCSessionEvent.JoinStateChanged, onJoinStateChanged);
 
-    return (): void => {
-      rtcSession.off(
-        MatrixRTCSessionEvent.JoinStateChanged,
-        onJoinStateChanged,
-      );
-    };
-  }, [rtcSession, onJoinStateChanged]);
+      return (): void => {
+        rtcSession.off(
+          MatrixRTCSessionEvent.JoinStateChanged,
+          onJoinStateChanged,
+        );
+      };
+    }
+  }, [rtcSession]);
 
-  return isJoined;
+  return rtcSession?.isJoined() ?? false;
 }

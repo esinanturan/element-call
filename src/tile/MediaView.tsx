@@ -1,23 +1,14 @@
 /*
-Copyright 2024 New Vector Ltd
+Copyright 2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { TrackReferenceOrPlaceholder } from "@livekit/components-core";
+import { type TrackReferenceOrPlaceholder } from "@livekit/components-core";
 import { animated } from "@react-spring/web";
-import { RoomMember } from "matrix-js-sdk/src/matrix";
-import { ComponentProps, ReactNode, forwardRef } from "react";
+import { type RoomMember } from "matrix-js-sdk/src/matrix";
+import { type ComponentProps, type ReactNode, forwardRef } from "react";
 import { useTranslation } from "react-i18next";
 import classNames from "classnames";
 import { VideoTrack } from "@livekit/components-react";
@@ -26,22 +17,34 @@ import { ErrorIcon } from "@vector-im/compound-design-tokens/assets/web/icons";
 
 import styles from "./MediaView.module.css";
 import { Avatar } from "../Avatar";
+import { type EncryptionStatus } from "../state/MediaViewModel";
+import { RaisedHandIndicator } from "../reactions/RaisedHandIndicator";
+import { showHandRaisedTimer, useSetting } from "../settings/settings";
+import { type ReactionOption } from "../reactions";
+import { ReactionIndicator } from "../reactions/ReactionIndicator";
+import { RTCConnectionStats } from "../RTCConnectionStats";
 
 interface Props extends ComponentProps<typeof animated.div> {
   className?: string;
   style?: ComponentProps<typeof animated.div>["style"];
   targetWidth: number;
   targetHeight: number;
-  video: TrackReferenceOrPlaceholder;
+  video: TrackReferenceOrPlaceholder | undefined;
   videoFit: "cover" | "contain";
   mirror: boolean;
   member: RoomMember | undefined;
   videoEnabled: boolean;
   unencryptedWarning: boolean;
+  encryptionStatus: EncryptionStatus;
   nameTagLeadingIcon?: ReactNode;
-  nameTag: string;
   displayName: string;
   primaryButton?: ReactNode;
+  raisedHandTime?: Date;
+  currentReaction?: ReactionOption;
+  raisedHandOnClick?: () => void;
+  localParticipant: boolean;
+  audioStreamStats?: RTCInboundRtpStreamStats | RTCOutboundRtpStreamStats;
+  videoStreamStats?: RTCInboundRtpStreamStats | RTCOutboundRtpStreamStats;
 }
 
 export const MediaView = forwardRef<HTMLDivElement, Props>(
@@ -58,20 +61,28 @@ export const MediaView = forwardRef<HTMLDivElement, Props>(
       videoEnabled,
       unencryptedWarning,
       nameTagLeadingIcon,
-      nameTag,
       displayName,
       primaryButton,
+      encryptionStatus,
+      raisedHandTime,
+      currentReaction,
+      raisedHandOnClick,
+      localParticipant,
+      audioStreamStats,
+      videoStreamStats,
       ...props
     },
     ref,
   ) => {
     const { t } = useTranslation();
+    const [handRaiseTimerVisible] = useSetting(showHandRaisedTimer);
+
+    const avatarSize = Math.round(Math.min(targetWidth, targetHeight) / 2);
 
     return (
       <animated.div
         className={classNames(styles.media, className, {
           [styles.mirror]: mirror,
-          [styles.videoMuted]: !videoEnabled,
         })}
         style={style}
         ref={ref}
@@ -83,36 +94,86 @@ export const MediaView = forwardRef<HTMLDivElement, Props>(
           <Avatar
             id={member?.userId ?? displayName}
             name={displayName}
-            size={Math.round(Math.min(targetWidth, targetHeight) / 2)}
+            size={avatarSize}
             src={member?.getMxcAvatarUrl()}
             className={styles.avatar}
+            style={{ display: video && videoEnabled ? "none" : "initial" }}
           />
-          {video.publication !== undefined && (
+          {video?.publication !== undefined && (
             <VideoTrack
               trackRef={video}
               // There's no reason for this to be focusable
               tabIndex={-1}
               disablePictureInPicture
+              style={{ display: video && videoEnabled ? "block" : "none" }}
+              data-testid="video"
             />
           )}
         </div>
         <div className={styles.fg}>
+          <div className={styles.reactions}>
+            <RaisedHandIndicator
+              raisedHandTime={raisedHandTime}
+              miniature={avatarSize < 96}
+              showTimer={handRaiseTimerVisible}
+              onClick={raisedHandOnClick}
+            />
+            {currentReaction && (
+              <ReactionIndicator
+                miniature={avatarSize < 96}
+                emoji={currentReaction.emoji}
+              />
+            )}
+          </div>
+          {!video && !localParticipant && (
+            <div className={styles.status}>
+              {t("video_tile.waiting_for_media")}
+            </div>
+          )}
+          {(audioStreamStats || videoStreamStats) && (
+            <RTCConnectionStats
+              audio={audioStreamStats}
+              video={videoStreamStats}
+            />
+          )}
+          {/* TODO: Bring this back once encryption status is less broken */}
+          {/*encryptionStatus !== EncryptionStatus.Okay && (
+            <div className={styles.status}>
+              <Text as="span" size="sm" weight="medium" className={styles.name}>
+                {encryptionStatus === EncryptionStatus.Connecting &&
+                  t("e2ee_encryption_status.connecting")}
+                {encryptionStatus === EncryptionStatus.KeyMissing &&
+                  t("e2ee_encryption_status.key_missing")}
+                {encryptionStatus === EncryptionStatus.KeyInvalid &&
+                  t("e2ee_encryption_status.key_invalid")}
+                {encryptionStatus === EncryptionStatus.PasswordInvalid &&
+                  t("e2ee_encryption_status.password_invalid")}
+              </Text>
+            </div>
+          )*/}
           <div className={styles.nameTag}>
             {nameTagLeadingIcon}
-            <Text as="span" size="sm" weight="medium" className={styles.name}>
-              {nameTag}
+            <Text
+              as="span"
+              size="sm"
+              weight="medium"
+              className={styles.name}
+              data-testid="name_tag"
+            >
+              {displayName}
             </Text>
             {unencryptedWarning && (
               <Tooltip
                 label={t("common.unencrypted")}
-                side="bottom"
+                placement="bottom"
                 isTriggerInteractive={false}
               >
                 <ErrorIcon
                   width={20}
                   height={20}
-                  aria-label={t("common.unencrypted")}
                   className={styles.errorIcon}
+                  role="img"
+                  aria-label={t("common.unencrypted")}
                 />
               </Tooltip>
             )}

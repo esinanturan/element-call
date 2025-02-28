@@ -1,31 +1,24 @@
 /*
-Copyright 2022 New Vector Ltd
+Copyright 2022-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
 import { Link } from "react-router-dom";
-import { MatrixClient } from "matrix-js-sdk/src/client";
-import { RoomMember } from "matrix-js-sdk/src/models/room-member";
-import { Room } from "matrix-js-sdk/src/models/room";
-import { FC } from "react";
+import { type MatrixClient } from "matrix-js-sdk/src/client";
+import { type RoomMember } from "matrix-js-sdk/src/models/room-member";
+import { type Room } from "matrix-js-sdk/src/models/room";
+import { type FC, useCallback, type MouseEvent, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { IconButton, Text } from "@vector-im/compound-web";
+import { CloseIcon } from "@vector-im/compound-design-tokens/assets/web/icons";
+import classNames from "classnames";
 
-import { CopyButton } from "../button";
 import { Avatar, Size } from "../Avatar";
 import styles from "./CallList.module.css";
-import { getAbsoluteRoomUrl, getRelativeRoomUrl } from "../matrix-utils";
-import { Body } from "../typography/Typography";
-import { GroupCallRoom } from "./useGroupCallRooms";
+import { getRelativeRoomUrl } from "../utils/matrix";
+import { type GroupCallRoom } from "./useGroupCallRooms";
 import { useRoomEncryptionSystem } from "../e2ee/sharedKeyManagement";
 
 interface CallListProps {
@@ -65,28 +58,53 @@ interface CallTileProps {
   client: MatrixClient;
 }
 
-const CallTile: FC<CallTileProps> = ({ name, avatarUrl, room }) => {
+const CallTile: FC<CallTileProps> = ({ name, avatarUrl, room, client }) => {
+  const { t } = useTranslation();
   const roomEncryptionSystem = useRoomEncryptionSystem(room.roomId);
+  const [isLeaving, setIsLeaving] = useState(false);
+
+  const onRemove = useCallback(
+    (e: MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      setIsLeaving(true);
+      client.leave(room.roomId).catch(() => setIsLeaving(false));
+    },
+    [room, client],
+  );
+
+  const body = (
+    <>
+      <Avatar id={room.roomId} name={name} size={Size.LG} src={avatarUrl} />
+      <div className={styles.callInfo}>
+        <Text weight="semibold" className={styles.callName}>
+          {name}
+        </Text>
+      </div>
+      <IconButton
+        onClick={onRemove}
+        disabled={isLeaving}
+        aria-label={t("action.remove")}
+      >
+        <CloseIcon />
+      </IconButton>
+    </>
+  );
+
   return (
     <div className={styles.callTile}>
-      <Link
-        to={getRelativeRoomUrl(room.roomId, roomEncryptionSystem, room.name)}
-        className={styles.callTileLink}
-      >
-        <Avatar id={room.roomId} name={name} size={Size.LG} src={avatarUrl} />
-        <div className={styles.callInfo}>
-          <Body overflowEllipsis fontWeight="semiBold">
-            {name}
-          </Body>
-        </div>
-        <div className={styles.copyButtonSpacer} />
-      </Link>
-      <CopyButton
-        className={styles.copyButton}
-        variant="icon"
-        // Todo add the viaServers to the created link
-        value={getAbsoluteRoomUrl(room.roomId, roomEncryptionSystem, room.name)}
-      />
+      {isLeaving ? (
+        <span className={classNames(styles.callTileLink, styles.disabled)}>
+          {body}
+        </span>
+      ) : (
+        <Link
+          to={getRelativeRoomUrl(room.roomId, roomEncryptionSystem, room.name)}
+          className={styles.callTileLink}
+        >
+          {body}
+        </Link>
+      )}
     </div>
   );
 };

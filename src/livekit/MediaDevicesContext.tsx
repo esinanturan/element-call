@@ -1,21 +1,12 @@
 /*
-Copyright 2023 New Vector Ltd
+Copyright 2023, 2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
 import {
-  FC,
+  type FC,
   createContext,
   useCallback,
   useContext,
@@ -23,9 +14,11 @@ import {
   useMemo,
   useRef,
   useState,
+  type JSX,
 } from "react";
 import { createMediaDeviceObserver } from "@livekit/components-core";
-import { Observable } from "rxjs";
+import { map, startWith } from "rxjs";
+import { useObservableEagerState } from "observable-hooks";
 import { logger } from "matrix-js-sdk/src/logger";
 
 import {
@@ -33,12 +26,27 @@ import {
   audioInput as audioInputSetting,
   audioOutput as audioOutputSetting,
   videoInput as videoInputSetting,
+  type Setting,
 } from "../settings/settings";
-import { isFirefox } from "../Platform";
+
+export type DeviceLabel =
+  | { type: "name"; name: string }
+  | { type: "number"; number: number }
+  | { type: "default"; name: string | null };
 
 export interface MediaDevice {
-  available: MediaDeviceInfo[];
+  /**
+   * A map from available device IDs to labels.
+   */
+  available: Map<string, DeviceLabel>;
   selectedId: string | undefined;
+  /**
+   * The group ID of the selected device.
+   */
+  // This is exposed sort of ad-hoc because it's only needed for knowing when to
+  // restart the tracks of default input devices, and ideally this behavior
+  // would be encapsulated somehow…
+  selectedGroupId: string | undefined;
   select: (deviceId: string) => void;
 }
 
@@ -50,26 +58,10 @@ export interface MediaDevices {
   stopUsingDeviceNames: () => void;
 }
 
-// Cargo-culted from @livekit/components-react
-function useObservableState<T>(
-  observable: Observable<T> | undefined,
-  startWith: T,
-): T {
-  const [state, setState] = useState<T>(startWith);
-  useEffect(() => {
-    // observable state doesn't run in SSR
-    if (typeof window === "undefined" || !observable) return;
-    const subscription = observable.subscribe(setState);
-    return (): void => subscription.unsubscribe();
-  }, [observable]);
-  return state;
-}
-
 function useMediaDevice(
   kind: MediaDeviceKind,
-  fallbackDevice: string | undefined,
+  setting: Setting<string | undefined>,
   usingNames: boolean,
-  alwaysDefault: boolean = false,
 ): MediaDevice {
   // Make sure we don't needlessly reset to a device observer without names,
   // once permissions are already given
@@ -83,42 +75,100 @@ function useMediaDevice(
   // useMediaDevices provides no way to request device names.
   // Tragically, the only way to get device names out of LiveKit is to specify a
   // kind, which then results in multiple permissions requests.
-  const deviceObserver = useMemo(
+  const deviceObserver$ = useMemo(
     () =>
       createMediaDeviceObserver(
         kind,
         () => logger.error("Error creating MediaDeviceObserver"),
         requestPermissions,
-      ),
+      ).pipe(startWith([])),
     [kind, requestPermissions],
   );
-  const available = useObservableState(deviceObserver, []);
-  const [selectedId, select] = useState(fallbackDevice);
+  const available = useObservableEagerState(
+    useMemo(
+      () =>
+        deviceObserver$.pipe(
+          map((availableRaw) => {
+            // Sometimes browsers (particularly Firefox) can return multiple device
+            // entries for the exact same device ID; using a map deduplicates them
+            let available = new Map<string, DeviceLabel>(
+              availableRaw.map((d, i) => [
+                d.deviceId,
+                d.label
+                  ? { type: "name", name: d.label }
+                  : { type: "number", number: i + 1 },
+              ]),
+            );
+            // Create a virtual default audio output for browsers that don't have one.
+            // Its device ID must be the empty string because that's what setSinkId
+            // recognizes.
+            if (
+              kind === "audiooutput" &&
+              available.size &&
+              !available.has("") &&
+              !available.has("default")
+            )
+              available = new Map([
+                ["", { type: "default", name: availableRaw[0]?.label || null }],
+                ...available,
+              ]);
+            // Note: creating virtual default input devices would be another problem
+            // entirely, because requesting a media stream from deviceId "" won't
+            // automatically track the default device.
+            return available;
+          }),
+        ),
+      [kind, deviceObserver$],
+    ),
+  );
 
-  return useMemo(() => {
-    let devId;
-    if (available) {
-      devId = available.some((d) => d.deviceId === selectedId)
-        ? selectedId
-        : available.some((d) => d.deviceId === fallbackDevice)
-          ? fallbackDevice
-          : available.at(0)?.deviceId;
+  const [preferredId, select] = useSetting(setting);
+  const selectedId = useMemo(() => {
+    if (available.size) {
+      // If the preferred device is available, use it. Or if every available
+      // device ID is falsy, the browser is probably just being paranoid about
+      // fingerprinting and we should still try using the preferred device.
+      // Worst case it is not available and the browser will gracefully fall
+      // back to some other device for us when requesting the media stream.
+      // Otherwise, select the first available device.
+      return (preferredId !== undefined && available.has(preferredId)) ||
+        (available.size === 1 && available.has(""))
+        ? preferredId
+        : available.keys().next().value;
     }
+    return undefined;
+  }, [available, preferredId]);
+  const selectedGroupId = useObservableEagerState(
+    useMemo(
+      () =>
+        deviceObserver$.pipe(
+          map(
+            (availableRaw) =>
+              availableRaw.find((d) => d.deviceId === selectedId)?.groupId,
+          ),
+        ),
+      [deviceObserver$, selectedId],
+    ),
+  );
 
-    return {
-      available: available ?? [],
-      selectedId: alwaysDefault ? undefined : devId,
+  return useMemo(
+    () => ({
+      available,
+      selectedId,
+      selectedGroupId,
       select,
-    };
-  }, [available, selectedId, fallbackDevice, select, alwaysDefault]);
+    }),
+    [available, selectedId, selectedGroupId, select],
+  );
 }
 
-const deviceStub: MediaDevice = {
-  available: [],
+export const deviceStub: MediaDevice = {
+  available: new Map(),
   selectedId: undefined,
+  selectedGroupId: undefined,
   select: () => {},
 };
-const devicesStub: MediaDevices = {
+export const devicesStub: MediaDevices = {
   audioInput: deviceStub,
   audioOutput: deviceStub,
   videoInput: deviceStub,
@@ -126,7 +176,7 @@ const devicesStub: MediaDevices = {
   stopUsingDeviceNames: () => {},
 };
 
-const MediaDevicesContext = createContext<MediaDevices>(devicesStub);
+export const MediaDevicesContext = createContext<MediaDevices>(devicesStub);
 
 interface Props {
   children: JSX.Element;
@@ -137,45 +187,21 @@ export const MediaDevicesProvider: FC<Props> = ({ children }) => {
   const [numCallersUsingNames, setNumCallersUsingNames] = useState(0);
   const usingNames = numCallersUsingNames > 0;
 
-  // Setting the audio device to something other than 'undefined' breaks echo-cancellation
-  // and even can introduce multiple different output devices for one call.
-  const alwaysUseDefaultAudio = isFirefox();
-
-  // On FF we dont need to query the names
-  // (call enumerateDevices + create meadia stream to trigger permissions)
-  // for ouput devices because the selector wont be shown on FF.
-  const useOutputNames = usingNames && !isFirefox();
-
-  const [storedAudioInput, setStoredAudioInput] = useSetting(audioInputSetting);
-  const [storedAudioOutput, setStoredAudioOutput] =
-    useSetting(audioOutputSetting);
-  const [storedVideoInput, setStoredVideoInput] = useSetting(videoInputSetting);
-
-  const audioInput = useMediaDevice("audioinput", storedAudioInput, usingNames);
+  const audioInput = useMediaDevice(
+    "audioinput",
+    audioInputSetting,
+    usingNames,
+  );
   const audioOutput = useMediaDevice(
     "audiooutput",
-    storedAudioOutput,
-    useOutputNames,
-    alwaysUseDefaultAudio,
+    audioOutputSetting,
+    usingNames,
   );
-  const videoInput = useMediaDevice("videoinput", storedVideoInput, usingNames);
-
-  useEffect(() => {
-    if (audioInput.selectedId !== undefined)
-      setStoredAudioInput(audioInput.selectedId);
-  }, [setStoredAudioInput, audioInput.selectedId]);
-
-  useEffect(() => {
-    // Skip setting state for ff output. Redundent since it is set to always return 'undefined'
-    // but makes it clear while debugging that this is not happening on FF. + perf ;)
-    if (audioOutput.selectedId !== undefined && !isFirefox())
-      setStoredAudioOutput(audioOutput.selectedId);
-  }, [setStoredAudioOutput, audioOutput.selectedId]);
-
-  useEffect(() => {
-    if (videoInput.selectedId !== undefined)
-      setStoredVideoInput(videoInput.selectedId);
-  }, [setStoredVideoInput, videoInput.selectedId]);
+  const videoInput = useMediaDevice(
+    "videoinput",
+    videoInputSetting,
+    usingNames,
+  );
 
   const startUsingDeviceNames = useCallback(
     () => setNumCallersUsingNames((n) => n + 1),

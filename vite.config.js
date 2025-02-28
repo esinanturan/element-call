@@ -1,22 +1,14 @@
 /*
-Copyright 2021 New Vector Ltd
+Copyright 2021-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
 import { defineConfig, loadEnv } from "vite";
 import svgrPlugin from "vite-plugin-svgr";
 import htmlTemplate from "vite-plugin-html-template";
+import { codecovVitePlugin } from "@codecov/vite-plugin";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import react from "@vitejs/plugin-react";
 import basicSsl from "@vitejs/plugin-basic-ssl";
@@ -40,6 +32,12 @@ export default defineConfig(({ mode }) => {
         title: env.VITE_PRODUCT_NAME || "Element Call",
       },
     }),
+
+    codecovVitePlugin({
+      enableBundleAnalysis: process.env.CODECOV_TOKEN !== undefined,
+      bundleName: "element-call",
+      uploadToken: process.env.CODECOV_TOKEN,
+    }),
   ];
 
   if (
@@ -50,8 +48,9 @@ export default defineConfig(({ mode }) => {
   ) {
     plugins.push(
       sentryVitePlugin({
-        include: "./dist",
-        release: process.env.VITE_APP_VERSION,
+        release: {
+          name: process.env.VITE_APP_VERSION,
+        },
       }),
     );
   }
@@ -62,6 +61,29 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       sourcemap: true,
+      rollupOptions: {
+        output: {
+          assetFileNames: ({ originalFileNames }) => {
+            if (originalFileNames) {
+              for (const name of originalFileNames) {
+                // Custom asset name for locales to include the locale code in the filename
+                const match = name.match(/locales\/([^/]+)\/(.+)\.json$/);
+                if (match) {
+                  const [, locale, filename] = match;
+                  return `assets/${locale}-${filename}-[hash].json`;
+                }
+              }
+            }
+
+            // Default naming fallback
+            return "assets/[name]-[hash][extname]";
+          },
+          manualChunks: {
+            // we should be able to remove this one https://github.com/matrix-org/matrix-rust-sdk-crypto-wasm/pull/167 lands
+            "matrix-sdk-crypto-wasm": ["@matrix-org/matrix-sdk-crypto-wasm"],
+          },
+        },
+      },
     },
     plugins,
     resolve: {
@@ -76,13 +98,19 @@ export default defineConfig(({ mode }) => {
         "react-dom",
         "matrix-js-sdk",
         "react-use-measure",
-        "@juggle/resize-observer",
         // These packages modify the document based on some module-level global
         // state, and don't play nicely with duplicate copies of themselves
         // https://github.com/radix-ui/primitives/issues/1241#issuecomment-1847837850
         "@radix-ui/react-focus-guards",
         "@radix-ui/react-dismissable-layer",
       ],
+    },
+    // Vite is using esbuild in development mode, which doesn't work with the wasm loader
+    // in matrix-sdk-crypto-wasm, so we need to exclude it here. This doesn't affect the
+    // production build (which uses rollup) which still works as expected.
+    // https://vite.dev/guide/why.html#why-not-bundle-with-esbuild
+    optimizeDeps: {
+      exclude: ["@matrix-org/matrix-sdk-crypto-wasm"],
     },
   };
 });

@@ -1,21 +1,13 @@
 /*
-Copyright 2022 - 2023 New Vector Ltd
+Copyright 2022-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { FC, useCallback, useState } from "react";
-import { useHistory, useLocation } from "react-router-dom";
+import { type FC, useCallback, useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { logger } from "matrix-js-sdk/src/logger";
 
 import { useClientLegacy } from "./ClientContext";
 import { useProfile } from "./profile/useProfile";
@@ -28,7 +20,7 @@ interface Props {
 
 export const UserMenuContainer: FC<Props> = ({ preventNavigation = false }) => {
   const location = useLocation();
-  const history = useHistory();
+  const navigate = useNavigate();
   const { client, logout, authenticated, passwordlessUser } = useClientLegacy();
   const { displayName, avatarUrl } = useProfile(client);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
@@ -40,7 +32,7 @@ export const UserMenuContainer: FC<Props> = ({ preventNavigation = false }) => {
   const [settingsTab, setSettingsTab] = useState(defaultSettingsTab);
 
   const onAction = useCallback(
-    async (value: string) => {
+    (value: string) => {
       switch (value) {
         case "user":
           setSettingsTab("profile");
@@ -54,11 +46,13 @@ export const UserMenuContainer: FC<Props> = ({ preventNavigation = false }) => {
           logout?.();
           break;
         case "login":
-          history.push("/login", { state: { from: location } });
+          navigate("/login", { state: { from: location } })?.catch((error) =>
+            logger.error("Failed to navigate to login", error),
+          );
           break;
       }
     },
-    [history, location, logout, setSettingsModalOpen],
+    [navigate, location, logout, setSettingsModalOpen],
   );
 
   const userName = client?.getUserIdLocalpart() ?? "";

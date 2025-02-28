@@ -1,24 +1,15 @@
 /*
-Copyright 2024 New Vector Ltd
+Copyright 2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { BehaviorSubject, Observable } from "rxjs";
-import { ComponentType } from "react";
+import { type BehaviorSubject, type Observable } from "rxjs";
+import { type ComponentType } from "react";
 
-import { MediaViewModel, UserMediaViewModel } from "../state/MediaViewModel";
-import { LayoutProps } from "./Grid";
+import { type LayoutProps } from "./Grid";
+import { type TileViewModel } from "../state/TileViewModel";
 
 export interface Bounds {
   width: number;
@@ -40,29 +31,16 @@ export interface CallLayoutInputs {
   /**
    * The minimum bounds of the layout area.
    */
-  minBounds: Observable<Bounds>;
+  minBounds$: Observable<Bounds>;
   /**
    * The alignment of the floating spotlight tile, if present.
    */
-  spotlightAlignment: BehaviorSubject<Alignment>;
+  spotlightAlignment$: BehaviorSubject<Alignment>;
   /**
    * The alignment of the small picture-in-picture tile, if present.
    */
-  pipAlignment: BehaviorSubject<Alignment>;
+  pipAlignment$: BehaviorSubject<Alignment>;
 }
-
-export interface GridTileModel {
-  type: "grid";
-  vm: UserMediaViewModel;
-}
-
-export interface SpotlightTileModel {
-  type: "spotlight";
-  vms: MediaViewModel[];
-  maximised: boolean;
-}
-
-export type TileModel = GridTileModel | SpotlightTileModel;
 
 export interface CallLayoutOutputs<Model> {
   /**
@@ -72,11 +50,11 @@ export interface CallLayoutOutputs<Model> {
   /**
    * The visually fixed (non-scrolling) layer of the layout.
    */
-  fixed: ComponentType<LayoutProps<Model, TileModel, HTMLDivElement>>;
+  fixed: ComponentType<LayoutProps<Model, TileViewModel, HTMLDivElement>>;
   /**
    * The layer of the layout that can overflow and be scrolled.
    */
-  scrolling: ComponentType<LayoutProps<Model, TileModel, HTMLDivElement>>;
+  scrolling: ComponentType<LayoutProps<Model, TileViewModel, HTMLDivElement>>;
 }
 
 /**
@@ -95,7 +73,6 @@ export interface GridArrangement {
 
 const tileMaxAspectRatio = 17 / 9;
 const tileMinAspectRatio = 4 / 3;
-const tileMobileMinAspectRatio = 2 / 3;
 
 /**
  * Determine the ideal arrangement of tiles into a grid of a particular size.
@@ -114,7 +91,7 @@ export function arrangeTiles(
   const tileArea = Math.pow(Math.sqrt(area) / 8 + 125, 2);
   const tilesPerPage = Math.min(tileCount, area / tileArea);
 
-  const columns = Math.min(
+  let columns = Math.min(
     // Don't create more columns than we have items for
     tilesPerPage,
     // The ideal number of columns is given by a packing of equally-sized
@@ -131,22 +108,21 @@ export function arrangeTiles(
   let rows = tilesPerPage / columns;
   // If all the tiles could fit on one page, we want to ensure that they do by
   // not leaving fractional rows hanging off the bottom
-  if (tilesPerPage === tileCount) rows = Math.ceil(rows);
+  if (tilesPerPage === tileCount) {
+    rows = Math.ceil(rows);
+    // We may now be able to fit the tiles into fewer columns
+    columns = Math.ceil(tileCount / rows);
+  }
 
   let tileWidth = (width - (columns + 1) * gap) / columns;
   let tileHeight = (minHeight - (rows - 1) * gap) / rows;
 
   // Impose a minimum and maximum aspect ratio on the tiles
   const tileAspectRatio = tileWidth / tileHeight;
-  // We enforce a different min aspect ratio in 1:1s on mobile
-  const minAspectRatio =
-    tileCount === 1 && width < 600
-      ? tileMobileMinAspectRatio
-      : tileMinAspectRatio;
   if (tileAspectRatio > tileMaxAspectRatio)
     tileWidth = tileHeight * tileMaxAspectRatio;
-  else if (tileAspectRatio < minAspectRatio)
-    tileHeight = tileWidth / minAspectRatio;
+  else if (tileAspectRatio < tileMinAspectRatio)
+    tileHeight = tileWidth / tileMinAspectRatio;
 
   return { tileWidth, tileHeight, gap, columns };
 }

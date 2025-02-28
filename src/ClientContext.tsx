@@ -1,21 +1,12 @@
 /*
-Copyright 2021-2022 New Vector Ltd
+Copyright 2021-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
 import {
-  FC,
+  type FC,
   useCallback,
   useEffect,
   useState,
@@ -23,31 +14,22 @@ import {
   useContext,
   useRef,
   useMemo,
+  type JSX,
 } from "react";
-import { useHistory } from "react-router-dom";
-import {
-  ClientEvent,
-  ICreateClientOpts,
-  MatrixClient,
-} from "matrix-js-sdk/src/client";
+import { useNavigate } from "react-router-dom";
 import { logger } from "matrix-js-sdk/src/logger";
-import { useTranslation } from "react-i18next";
-import { ISyncStateData, SyncState } from "matrix-js-sdk/src/sync";
+import { type ISyncStateData, type SyncState } from "matrix-js-sdk/src/sync";
+import { ClientEvent, type MatrixClient } from "matrix-js-sdk/src/client";
 
-import { ErrorView } from "./FullScreenView";
-import {
-  CryptoStoreIntegrityError,
-  fallbackICEServerAllowed,
-  initClient,
-} from "./matrix-utils";
+import type { WidgetApi } from "matrix-widget-api";
+import { ErrorPage } from "./FullScreenView";
 import { widget } from "./widget";
 import {
   PosthogAnalytics,
   RegistrationType,
 } from "./analytics/PosthogAnalytics";
-import { translatedError } from "./TranslatedError";
 import { useEventTarget } from "./useEvents";
-import { Config } from "./config/Config";
+import { OpenElsewhereError } from "./RichError";
 
 declare global {
   interface Window {
@@ -64,6 +46,10 @@ export type ValidClientState = {
   // 'Disconnected' rather than 'connected' because it tracks specifically
   // whether the client is supposed to be connected but is not
   disconnected: boolean;
+  supportedFeatures: {
+    reactions: boolean;
+    thumbnails: boolean;
+  };
   setClient: (params?: SetClientParams) => void;
 };
 
@@ -85,6 +71,8 @@ export type SetClientParams = {
 };
 
 const ClientContext = createContext<ClientState | undefined>(undefined);
+
+export const ClientContextProvider = ClientContext.Provider;
 
 export const useClientState = (): ClientState | undefined =>
   useContext(ClientContext);
@@ -156,7 +144,7 @@ interface Props {
 }
 
 export const ClientProvider: FC<Props> = ({ children }) => {
-  const history = useHistory();
+  const navigate = useNavigate();
 
   // null = signed out, undefined = loading
   const [initClientState, setInitClientState] = useState<
@@ -200,11 +188,11 @@ export const ClientProvider: FC<Props> = ({ children }) => {
       saveSession({ ...session, passwordlessUser: false });
 
       setInitClientState({
-        client: initClientState.client,
+        ...initClientState,
         passwordlessUser: false,
       });
     },
-    [initClientState?.client],
+    [initClientState],
   );
 
   const setClient = useCallback(
@@ -218,6 +206,7 @@ export const ClientProvider: FC<Props> = ({ children }) => {
       if (clientParams) {
         saveSession(clientParams.session);
         setInitClientState({
+          widgetApi: null,
           client: clientParams.client,
           passwordlessUser: clientParams.session.passwordlessUser,
         });
@@ -239,11 +228,9 @@ export const ClientProvider: FC<Props> = ({ children }) => {
     await client.clearStores();
     clearSession();
     setInitClientState(null);
-    history.push("/");
+    await navigate("/");
     PosthogAnalytics.instance.setRegistrationType(RegistrationType.Guest);
-  }, [history, initClientState?.client]);
-
-  const { t } = useTranslation();
+  }, [navigate, initClientState?.client]);
 
   // To protect against multiple sessions writing to the same storage
   // simultaneously, we send a broadcast message that shuts down all other
@@ -261,11 +248,13 @@ export const ClientProvider: FC<Props> = ({ children }) => {
     "message",
     useCallback(() => {
       initClientState?.client.stopClient();
-      setAlreadyOpenedErr(translatedError("application_opened_another_tab", t));
-    }, [initClientState?.client, setAlreadyOpenedErr, t]),
+      setAlreadyOpenedErr(new OpenElsewhereError());
+    }, [initClientState?.client, setAlreadyOpenedErr]),
   );
 
   const [isDisconnected, setIsDisconnected] = useState(false);
+  const [supportsReactions, setSupportsReactions] = useState(false);
+  const [supportsThumbnails, setSupportsThumbnails] = useState(false);
 
   const state: ClientState | undefined = useMemo(() => {
     if (alreadyOpenedErr) {
@@ -289,6 +278,10 @@ export const ClientProvider: FC<Props> = ({ children }) => {
       authenticated,
       setClient,
       disconnected: isDisconnected,
+      supportedFeatures: {
+        reactions: supportsReactions,
+        thumbnails: supportsThumbnails,
+      },
     };
   }, [
     alreadyOpenedErr,
@@ -297,6 +290,8 @@ export const ClientProvider: FC<Props> = ({ children }) => {
     logout,
     setClient,
     isDisconnected,
+    supportsReactions,
+    supportsThumbnails,
   ]);
 
   const onSync = useCallback(
@@ -321,6 +316,33 @@ export const ClientProvider: FC<Props> = ({ children }) => {
       initClientState.client.on(ClientEvent.Sync, onSync);
     }
 
+    if (initClientState.widgetApi) {
+      // There is currently no widget API for authenticated media thumbnails.
+      setSupportsThumbnails(false);
+      const reactSend = initClientState.widgetApi.hasCapability(
+        "org.matrix.msc2762.send.event:m.reaction",
+      );
+      const redactSend = initClientState.widgetApi.hasCapability(
+        "org.matrix.msc2762.send.event:m.room.redaction",
+      );
+      const reactRcv = initClientState.widgetApi.hasCapability(
+        "org.matrix.msc2762.receive.event:m.reaction",
+      );
+      const redactRcv = initClientState.widgetApi.hasCapability(
+        "org.matrix.msc2762.receive.event:m.room.redaction",
+      );
+
+      if (!reactSend || !reactRcv || !redactSend || !redactRcv) {
+        logger.warn("Widget does not support reactions");
+        setSupportsReactions(false);
+      } else {
+        setSupportsReactions(true);
+      }
+    } else {
+      setSupportsReactions(true);
+      setSupportsThumbnails(true);
+    }
+
     return (): void => {
       if (initClientState.client) {
         initClientState.client.removeListener(ClientEvent.Sync, onSync);
@@ -329,7 +351,7 @@ export const ClientProvider: FC<Props> = ({ children }) => {
   }, [initClientState, onSync]);
 
   if (alreadyOpenedErr) {
-    return <ErrorView error={alreadyOpenedErr} />;
+    return <ErrorPage error={alreadyOpenedErr} />;
   }
 
   return (
@@ -337,7 +359,8 @@ export const ClientProvider: FC<Props> = ({ children }) => {
   );
 };
 
-type InitResult = {
+export type InitResult = {
+  widgetApi: WidgetApi | null;
   client: MatrixClient;
   passwordlessUser: boolean;
 };
@@ -348,58 +371,13 @@ async function loadClient(): Promise<InitResult | null> {
     logger.log("Using a matryoshka client");
     const client = await widget.client;
     return {
+      widgetApi: widget.api,
       client,
       passwordlessUser: false,
     };
   } else {
-    // We're running as a standalone application
-    try {
-      const session = loadSession();
-      if (!session) {
-        logger.log("No session stored; continuing without a client");
-        return null;
-      }
-
-      logger.log("Using a standalone client");
-
-      /* eslint-disable camelcase */
-      const { user_id, device_id, access_token, passwordlessUser } = session;
-      const initClientParams: ICreateClientOpts = {
-        baseUrl: Config.defaultHomeserverUrl()!,
-        accessToken: access_token,
-        userId: user_id,
-        deviceId: device_id,
-        fallbackICEServerAllowed: fallbackICEServerAllowed,
-        livekitServiceURL: Config.get().livekit?.livekit_service_url,
-      };
-
-      try {
-        const client = await initClient(initClientParams, true);
-        return {
-          client,
-          passwordlessUser,
-        };
-      } catch (err) {
-        if (err instanceof CryptoStoreIntegrityError) {
-          // We can't use this session anymore, so let's log it out
-          try {
-            const client = await initClient(initClientParams, false); // Don't need the crypto store just to log out)
-            await client.logout(true);
-          } catch (err) {
-            logger.warn(
-              "The previous session was lost, and we couldn't log it out, " +
-                err +
-                "either",
-            );
-          }
-        }
-        throw err;
-      }
-      /* eslint-enable camelcase */
-    } catch (err) {
-      clearSession();
-      throw err;
-    }
+    const { initSPA } = await import("./utils/spa");
+    return initSPA(loadSession, clearSession);
   }
 }
 

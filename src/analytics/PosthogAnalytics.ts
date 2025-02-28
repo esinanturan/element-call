@@ -1,22 +1,17 @@
 /*
-Copyright 2022 The New Vector Ltd
+Copyright 2022-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import posthog, { CaptureOptions, PostHog, Properties } from "posthog-js";
+import posthog, {
+  type CaptureOptions,
+  type PostHog,
+  type Properties,
+} from "posthog-js";
 import { logger } from "matrix-js-sdk/src/logger";
-import { MatrixClient } from "matrix-js-sdk";
+import { type MatrixClient } from "matrix-js-sdk/src/matrix";
 import { Buffer } from "buffer";
 
 import { widget } from "../widget";
@@ -73,6 +68,7 @@ interface PlatformProperties {
   appVersion: string;
   matrixBackend: "embedded" | "jssdk";
   callBackend: "livekit" | "full-mesh";
+  cryptoVersion?: string;
 }
 
 interface PosthogSettings {
@@ -95,7 +91,7 @@ export class PosthogAnalytics {
    * 1. Declare a type for the event, extending IPosthogEvent.
    */
 
-  private static ANALYTICS_EVENT_TYPE = "im.vector.analytics";
+  private static ANALYTICS_EVENT_TYPE = "im.vector.analytics" as const;
 
   // set true during the constructor if posthog config is present, otherwise false
   private static internalInstance: PosthogAnalytics | null = null;
@@ -144,7 +140,7 @@ export class PosthogAnalytics {
         advanced_disable_decide: true,
       });
       this.enabled = true;
-    } else {
+    } else if (import.meta.env.MODE !== "test") {
       logger.info(
         "Posthog is not enabled because there is no api key or no host given in the config",
       );
@@ -193,6 +189,9 @@ export class PosthogAnalytics {
       appVersion,
       matrixBackend: widget ? "embedded" : "jssdk",
       callBackend: "livekit",
+      cryptoVersion: widget
+        ? undefined
+        : window.matrixclient?.getCrypto()?.getVersion(),
     };
   }
 
@@ -265,7 +264,7 @@ export class PosthogAnalytics {
         this.posthog.identify(analyticsID);
       } else {
         logger.info(
-          "No analyticsID is availble. Should not try to setup posthog",
+          "No analyticsID is available. Should not try to setup posthog",
         );
       }
     }
@@ -273,14 +272,14 @@ export class PosthogAnalytics {
 
   private async getAnalyticsId(): Promise<string | null> {
     const client: MatrixClient = window.matrixclient;
-    let accountAnalyticsId;
+    let accountAnalyticsId: string | null;
     if (widget) {
       accountAnalyticsId = getUrlParams().analyticsID;
     } else {
       const accountData = await client.getAccountDataFromServer(
         PosthogAnalytics.ANALYTICS_EVENT_TYPE,
       );
-      accountAnalyticsId = accountData?.id;
+      accountAnalyticsId = accountData?.id ?? null;
     }
     if (accountAnalyticsId) {
       // we dont just use the element web analytics ID because that would allow to associate
@@ -333,7 +332,9 @@ export class PosthogAnalytics {
   }
 
   public onLoginStatusChanged(): void {
-    this.maybeIdentifyUser();
+    this.maybeIdentifyUser().catch(() =>
+      logger.log("Could not identify user on login status change"),
+    );
   }
 
   private updateSuperProperties(): void {
@@ -382,20 +383,27 @@ export class PosthogAnalytics {
     }
   }
 
-  public async trackEvent<E extends IPosthogEvent>(
+  public trackEvent<E extends IPosthogEvent>(
     { eventName, ...properties }: E,
     options?: CaptureOptions,
-  ): Promise<void> {
+  ): void {
+    const doCapture = (): void => {
+      if (
+        this.anonymity == Anonymity.Disabled ||
+        this.anonymity == Anonymity.Anonymous
+      )
+        return;
+      this.capture(eventName, properties, options);
+    };
+
     if (this.identificationPromise) {
-      // only make calls to posthog after the identificaion is done
-      await this.identificationPromise;
+      // only make calls to posthog after the identification is done
+      this.identificationPromise.then(doCapture, (e) => {
+        logger.error("Failed to identify user for tracking", e);
+      });
+    } else {
+      doCapture();
     }
-    if (
-      this.anonymity == Anonymity.Disabled ||
-      this.anonymity == Anonymity.Anonymous
-    )
-      return;
-    this.capture(eventName, properties, options);
   }
 
   private startListeningToSettingsChanges(): void {
@@ -407,9 +415,11 @@ export class PosthogAnalytics {
     //  * When the user changes their preferences on this device
     // Note that for new accounts, pseudonymousAnalyticsOptIn won't be set, so updateAnonymityFromSettings
     // won't be called (i.e. this.anonymity will be left as the default, until the setting changes)
-    optInAnalytics.value.subscribe((optIn) => {
+    optInAnalytics.value$.subscribe((optIn) => {
       this.setAnonymity(optIn ? Anonymity.Pseudonymous : Anonymity.Disabled);
-      this.maybeIdentifyUser();
+      this.maybeIdentifyUser().catch(() =>
+        logger.log("Could not identify user"),
+      );
     });
   }
 

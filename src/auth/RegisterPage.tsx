@@ -1,46 +1,37 @@
 /*
-Copyright 2021-2022 New Vector Ltd
+Copyright 2021-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
 import {
-  ChangeEvent,
-  FC,
-  FormEvent,
+  type ChangeEvent,
+  type FC,
+  type FormEvent,
   useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
-import { useHistory, useLocation } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { captureException } from "@sentry/react";
 import { sleep } from "matrix-js-sdk/src/utils";
 import { Trans, useTranslation } from "react-i18next";
 import { logger } from "matrix-js-sdk/src/logger";
+import { Button, Text } from "@vector-im/compound-web";
 
 import { FieldRow, InputField, ErrorMessage } from "../input/Input";
-import { Button } from "../button";
 import { useClientLegacy } from "../ClientContext";
 import { useInteractiveRegistration } from "./useInteractiveRegistration";
 import styles from "./LoginPage.module.css";
 import Logo from "../icons/LogoLarge.svg?react";
-import { LoadingView } from "../FullScreenView";
+import { LoadingPage } from "../FullScreenView";
 import { useRecaptcha } from "./useRecaptcha";
-import { Caption, Link } from "../typography/Typography";
 import { usePageTitle } from "../usePageTitle";
 import { PosthogAnalytics } from "../analytics/PosthogAnalytics";
 import { Config } from "../config/Config";
+import { ExternalLink, Link } from "../button/Link";
 
 export const RegisterPage: FC = () => {
   const { t } = useTranslation();
@@ -50,13 +41,13 @@ export const RegisterPage: FC = () => {
     useClientLegacy();
 
   const confirmPasswordRef = useRef<HTMLInputElement>(null);
-  const history = useHistory();
+  const navigate = useNavigate();
   const location = useLocation();
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<Error>();
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
-  const { recaptchaKey, register } = useInteractiveRegistration();
+  const { recaptchaKey, register } = useInteractiveRegistration(client);
   const { execute, reset, recaptchaId } = useRecaptcha(recaptchaKey);
 
   const onSubmitRegisterForm = useCallback(
@@ -109,15 +100,15 @@ export const RegisterPage: FC = () => {
       };
 
       submit()
-        .then(() => {
+        .then(async () => {
           // eslint-disable-next-line @typescript-eslint/ban-ts-comment
           // @ts-ignore
           if (location.state?.from) {
             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             // @ts-ignore
-            history.push(location.state?.from);
+            await navigate(location.state?.from);
           } else {
-            history.push("/");
+            await navigate("/");
           }
         })
         .catch((error) => {
@@ -129,7 +120,7 @@ export const RegisterPage: FC = () => {
     [
       register,
       location,
-      history,
+      navigate,
       passwordlessUser,
       reset,
       execute,
@@ -150,12 +141,14 @@ export const RegisterPage: FC = () => {
 
   useEffect(() => {
     if (!loading && authenticated && !passwordlessUser && !registering) {
-      history.push("/");
+      navigate("/")?.catch((error) => {
+        logger.error("Failed to navigate to /", error);
+      });
     }
-  }, [loading, history, authenticated, passwordlessUser, registering]);
+  }, [loading, navigate, authenticated, passwordlessUser, registering]);
 
   if (loading) {
-    return <LoadingView />;
+    return <LoadingPage />;
   } else {
     PosthogAnalytics.instance.eventSignup.cacheSignupStart(new Date());
   }
@@ -210,24 +203,24 @@ export const RegisterPage: FC = () => {
                   data-testid="register_confirm_password"
                 />
               </FieldRow>
-              <Caption>
+              <Text size="sm">
                 <Trans i18nKey="recaptcha_caption">
                   This site is protected by ReCAPTCHA and the Google{" "}
-                  <Link href="https://www.google.com/policies/privacy/">
+                  <ExternalLink href="https://www.google.com/policies/privacy/">
                     Privacy Policy
-                  </Link>{" "}
+                  </ExternalLink>{" "}
                   and{" "}
-                  <Link href="https://policies.google.com/terms">
+                  <ExternalLink href="https://policies.google.com/terms">
                     Terms of Service
-                  </Link>{" "}
+                  </ExternalLink>{" "}
                   apply.
                   <br />
                   By clicking "Register", you agree to our{" "}
-                  <Link href={Config.get().eula}>
+                  <ExternalLink href={Config.get().eula}>
                     End User Licensing Agreement (EULA)
-                  </Link>
+                  </ExternalLink>
                 </Trans>
-              </Caption>
+              </Text>
               {error && (
                 <FieldRow>
                   <ErrorMessage error={error} />

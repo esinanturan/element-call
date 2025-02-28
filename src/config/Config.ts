@@ -1,47 +1,52 @@
 /*
-Copyright 2021-2022 New Vector Ltd
+Copyright 2021-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
+
+import { merge } from "lodash-es";
 
 import { getUrlParams } from "../UrlParams";
 import {
   DEFAULT_CONFIG,
-  ConfigOptions,
-  ResolvedConfigOptions,
+  type ConfigOptions,
+  type ResolvedConfigOptions,
 } from "./ConfigOptions";
 
 export class Config {
-  private static internalInstance: Config;
+  private static internalInstance: Config | undefined;
 
-  public static get(): ConfigOptions {
+  public static get(): ResolvedConfigOptions {
     if (!this.internalInstance?.config)
       throw new Error("Config instance read before config got initialized");
     return this.internalInstance.config;
   }
 
-  public static init(): Promise<void> {
-    if (Config.internalInstance?.initPromise) {
-      return Config.internalInstance.initPromise;
+  public static async init(): Promise<void> {
+    if (!Config.internalInstance?.initPromise) {
+      const internalInstance = new Config();
+      Config.internalInstance = internalInstance;
+
+      Config.internalInstance.initPromise = downloadConfig("/config.json").then(
+        (config) => {
+          internalInstance.config = merge({}, DEFAULT_CONFIG, config);
+        },
+      );
     }
-    Config.internalInstance = new Config();
-    Config.internalInstance.initPromise = new Promise<void>((resolve) => {
-      downloadConfig("../config.json").then((config) => {
-        Config.internalInstance.config = { ...DEFAULT_CONFIG, ...config };
-        resolve();
-      });
-    });
     return Config.internalInstance.initPromise;
+  }
+
+  /**
+   * This is a alternative initializer that does not load anything
+   * from a hosted config file but instead just initializes the config using the
+   * default config.
+   *
+   * It is supposed to only be used in tests. (It is executed in `vite.setup.js`)
+   */
+  public static initDefault(): void {
+    Config.internalInstance = new Config();
+    Config.internalInstance.config = { ...DEFAULT_CONFIG };
   }
 
   // Convenience accessors
@@ -69,11 +74,7 @@ async function downloadConfig(
   configJsonFilename: string,
 ): Promise<ConfigOptions> {
   const url = new URL(configJsonFilename, window.location.href);
-  url.searchParams.set("cachebuster", Date.now().toString());
-  const res = await fetch(url, {
-    cache: "no-cache",
-    method: "GET",
-  });
+  const res = await fetch(url);
 
   if (!res.ok || res.status === 404 || res.status === 0) {
     // Lack of a config isn't an error, we should just use the defaults.

@@ -1,31 +1,28 @@
 /*
-Copyright 2023 New Vector Ltd
+Copyright 2023, 2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
 import {
-  Dispatch,
-  SetStateAction,
+  type Dispatch,
+  type SetStateAction,
   useCallback,
   useEffect,
   useMemo,
 } from "react";
-import { IWidgetApiRequest } from "matrix-widget-api";
+import { type IWidgetApiRequest } from "matrix-widget-api";
+import { logger } from "matrix-js-sdk/src/logger";
 
-import { MediaDevice, useMediaDevices } from "../livekit/MediaDevicesContext";
+import {
+  type MediaDevice,
+  useMediaDevices,
+} from "../livekit/MediaDevicesContext";
 import { useReactiveState } from "../useReactiveState";
 import { ElementWidgetActions, widget } from "../widget";
+import { Config } from "../config/Config";
+import { useUrlParams } from "../UrlParams";
 
 /**
  * If there already are this many participants in the call, we automatically mute
@@ -60,13 +57,14 @@ function useMuteState(
   enabledByDefault: () => boolean,
 ): MuteState {
   const [enabled, setEnabled] = useReactiveState<boolean | undefined>(
+    // Determine the default value once devices are actually connected
     (prev) =>
-      device.available.length > 0 ? (prev ?? enabledByDefault()) : undefined,
+      prev ?? (device.available.size > 0 ? enabledByDefault() : undefined),
     [device],
   );
   return useMemo(
     () =>
-      device.available.length === 0
+      device.available.size === 0
         ? deviceUnavailable
         : {
             enabled: enabled ?? false,
@@ -76,17 +74,28 @@ function useMuteState(
   );
 }
 
-export function useMuteStates(): MuteStates {
+export function useMuteStates(isJoined: boolean): MuteStates {
   const devices = useMediaDevices();
 
-  const audio = useMuteState(devices.audioInput, () => true);
-  const video = useMuteState(devices.videoInput, () => true);
+  const { skipLobby } = useUrlParams();
+
+  const audio = useMuteState(devices.audioInput, () => {
+    return Config.get().media_devices.enable_audio && !skipLobby && !isJoined;
+  });
+  const video = useMuteState(
+    devices.videoInput,
+    () => Config.get().media_devices.enable_video && !skipLobby && !isJoined,
+  );
 
   useEffect(() => {
-    widget?.api.transport.send(ElementWidgetActions.DeviceMute, {
-      audio_enabled: audio.enabled,
-      video_enabled: video.enabled,
-    });
+    widget?.api.transport
+      .send(ElementWidgetActions.DeviceMute, {
+        audio_enabled: audio.enabled,
+        video_enabled: video.enabled,
+      })
+      .catch((e) =>
+        logger.warn("Could not send DeviceMute action to widget", e),
+      );
   }, [audio, video]);
 
   const onMuteStateChangeRequest = useCallback(

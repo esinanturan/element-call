@@ -1,20 +1,13 @@
 /*
-Copyright 2022 New Vector Ltd
+Copyright 2022-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
 import "matrix-js-sdk/src/@types/global";
+import type { DurationFormat as PolyfillDurationFormat } from "@formatjs/intl-durationformat";
+import { type Controls } from "../controls";
 
 declare global {
   interface Document {
@@ -24,12 +17,16 @@ declare global {
   }
 
   interface Window {
-    // TODO: https://gitlab.matrix.org/matrix-org/olm/-/issues/10
-    OLM_OPTIONS: Record<string, string>;
+    controls: Controls;
   }
 
   interface HTMLElement {
     // Safari only supports this prefixed, so tell the type system about it
     webkitRequestFullscreen: () => void;
+  }
+
+  namespace Intl {
+    // Add DurationFormat as part of the Intl namespace because we polyfill it
+    const DurationFormat: typeof PolyfillDurationFormat;
   }
 }

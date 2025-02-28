@@ -1,17 +1,8 @@
 /*
-Copyright 2022-2024 New Vector Ltd
+Copyright 2022-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
 .media {
@@ -24,7 +15,7 @@ limitations under the License.
   inline-size: 100%;
   block-size: 100%;
   object-fit: contain;
-  background-color: var(--cpd-color-bg-subtle-primary);
+  background-color: var(--video-tile-background);
   /* This transform is a no-op, but it forces Firefox to use a different
   rendering path, one that actually clips the corners of <video> elements into
   the intended rounded shape. We can remove this if Firefox stops being broken. */
@@ -43,12 +34,8 @@ limitations under the License.
   object-fit: contain;
 }
 
-.media.videoMuted video {
-  display: none;
-}
-
 .bg {
-  background-color: var(--cpd-color-bg-subtle-secondary);
+  background-color: var(--video-tile-background);
   inline-size: 100%;
   block-size: 100%;
   border-radius: inherit;
@@ -56,16 +43,11 @@ limitations under the License.
 }
 
 .avatar {
-  display: none;
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
   pointer-events: none;
-}
-
-.media.videoMuted .avatar {
-  display: initial;
 }
 
 /* CSS makes us put a condition here, even though all we want to do is
@@ -92,9 +74,9 @@ unconditionally select the container so we can use cqmin units */
     calc(var(--media-view-border-radius) - var(--cpd-space-3x))
   );
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 30px 1fr 30px;
   grid-template-rows: 1fr auto;
-  grid-template-areas: ". ." "nameTag button";
+  grid-template-areas: "reactions status ." "nameTag nameTag button";
   gap: var(--cpd-space-1x);
   place-items: start;
 }
@@ -113,6 +95,31 @@ unconditionally select the container so we can use cqmin units */
   box-shadow: var(--small-drop-shadow);
   box-sizing: border-box;
   max-inline-size: 100%;
+}
+
+.status {
+  grid-area: status;
+  justify-self: center;
+  align-self: start;
+  padding: var(--cpd-space-2x);
+  padding-block: var(--cpd-space-2x);
+  color: var(--cpd-color-text-primary);
+  background-color: var(--cpd-color-bg-canvas-default);
+  display: flex;
+  align-items: center;
+  border-radius: var(--cpd-radius-pill-effect);
+  user-select: none;
+  overflow: hidden;
+  box-shadow: var(--small-drop-shadow);
+  box-sizing: border-box;
+  max-inline-size: 100%;
+  text-align: center;
+}
+
+.reactions {
+  grid-area: reactions;
+  display: flex;
+  gap: var(--cpd-space-1x);
 }
 
 .nameTag > svg,
@@ -142,7 +149,9 @@ unconditionally select the container so we can use cqmin units */
   box-shadow: var(--small-drop-shadow);
   cursor: pointer;
   opacity: 0;
-  transition: opacity ease 0.15s;
+  transition:
+    opacity 0.15s,
+    background-color 0.1s;
 }
 
 .fg:has(:focus-visible) > button,

@@ -1,43 +1,35 @@
 /*
-Copyright 2021-2022 New Vector Ltd
+Copyright 2021-2024 New Vector Ltd.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
 */
 
-import { FC, FormEvent, useCallback, useRef, useState } from "react";
-import { useHistory, useLocation, Link } from "react-router-dom";
+import { type FC, type FormEvent, useCallback, useRef, useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
+import { Button } from "@vector-im/compound-web";
 
 import Logo from "../icons/LogoLarge.svg?react";
 import { useClient } from "../ClientContext";
 import { FieldRow, InputField, ErrorMessage } from "../input/Input";
-import { Button } from "../button";
 import styles from "./LoginPage.module.css";
 import { useInteractiveLogin } from "./useInteractiveLogin";
 import { usePageTitle } from "../usePageTitle";
 import { PosthogAnalytics } from "../analytics/PosthogAnalytics";
 import { Config } from "../config/Config";
+import { Link } from "../button/Link";
 
 export const LoginPage: FC = () => {
   const { t } = useTranslation();
   usePageTitle(t("login_title"));
 
-  const { setClient } = useClient();
-  const login = useInteractiveLogin();
+  const { client, setClient } = useClient();
+  const login = useInteractiveLogin(client);
   const homeserver = Config.defaultHomeserverUrl(); // TODO: Make this configurable
   const usernameRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
-  const history = useHistory();
+  const navigate = useNavigate();
   const location = useLocation();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error>();
@@ -56,7 +48,7 @@ export const LoginPage: FC = () => {
       }
 
       login(homeserver, usernameRef.current.value, passwordRef.current.value)
-        .then(([client, session]) => {
+        .then(async ([client, session]) => {
           if (!setClient) {
             return;
           }
@@ -69,9 +61,9 @@ export const LoginPage: FC = () => {
           if (locationState && locationState.from) {
             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             // @ts-ignore
-            history.push(locationState.from);
+            await navigate(locationState.from);
           } else {
-            history.push("/");
+            await navigate("/");
           }
           PosthogAnalytics.instance.eventLogin.track();
         })
@@ -80,7 +72,7 @@ export const LoginPage: FC = () => {
           setLoading(false);
         });
     },
-    [login, location, history, homeserver, setClient],
+    [login, location, navigate, homeserver, setClient],
   );
   // we need to limit the length of the homserver name to not cover the whole loginview input with the string.
   let shortendHomeserverName = Config.defaultServerName()?.slice(0, 25);
